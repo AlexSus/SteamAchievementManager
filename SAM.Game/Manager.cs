@@ -822,7 +822,22 @@ namespace SAM.Game
             }
         }
 
-        private void OnTrayRestore(object sender, EventArgs e)
+        private void OnTrayMenuOpening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (this._ScheduleQueue != null && this._ScheduleIndex < this._ScheduleQueue.Count)
+            {
+                var remaining = this._NextUnlockTime - DateTime.Now;
+                if (remaining.TotalSeconds < 0) remaining = TimeSpan.Zero;
+                var nextName = this._ScheduleQueue[this._ScheduleIndex].Info.Name;
+                int total = this._ScheduleQueue.Count;
+                this._TrayMenuStatus.Text =
+                    $"[{this._ScheduleIndex + 1}/{total}] \"{nextName}\" — {(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
+            }
+            else
+            {
+                this._TrayMenuStatus.Text = "No schedule running";
+            }
+        }
         {
             this.Show();
             this.WindowState = FormWindowState.Normal;
@@ -1261,7 +1276,6 @@ namespace SAM.Game
             this._RunScheduleButton.Enabled = true;
             this._RunScheduleButton.Text = "Run Schedule";
             this._StopScheduleButton.Enabled = false;
-            this._TrayMenuStatus.Text = "No schedule running";
             this._GameStatusLabel.Text = "Schedule stopped.";
         }
 
@@ -1282,7 +1296,6 @@ namespace SAM.Game
             string statusText = $"[{this._ScheduleIndex + 1}/{totalQueued}] Next: \"{nextName}\" — {(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
 
             this._GameStatusLabel.Text = statusText;
-            this._TrayMenuStatus.Text = statusText;
         }
 
         private void OnScheduleTick(object sender, EventArgs e)
@@ -1330,7 +1343,6 @@ namespace SAM.Game
                 this._RunScheduleButton.Enabled = true;
                 this._RunScheduleButton.Text = "Run Schedule";
                 this._StopScheduleButton.Enabled = false;
-                this._TrayMenuStatus.Text = "No schedule running";
                 this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
                 MessageBox.Show(this, "All scheduled achievements unlocked!", "Done",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
