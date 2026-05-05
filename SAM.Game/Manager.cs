@@ -49,7 +49,6 @@ namespace SAM.Game
         private readonly BindingList<Stats.StatInfo> _Statistics = new();
 
         private readonly API.Callbacks.UserStatsReceived _UserStatsReceivedCallback;
-        private readonly API.Callbacks.GlobalAchievementPercentagesReady _GlobalAchievementPercentagesReadyCallback;
 
         // --- Schedule state ---
         private readonly Random _Random = new Random();
@@ -57,6 +56,9 @@ namespace SAM.Game
         private List<(Stats.AchievementInfo Info, int DelayMs)> _ScheduleQueue;
         private int _ScheduleIndex;
         private DateTime _NextUnlockTime;
+
+        // --- Global percent polling ---
+        private int _GlobalPercentRetryCount = 0;
 
         // --- Inline delay editor ---
         private TextBox _InlineEditBox;
@@ -110,9 +112,6 @@ namespace SAM.Game
 
             this._UserStatsReceivedCallback = client.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
             this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
-
-            this._GlobalAchievementPercentagesReadyCallback = client.CreateAndRegisterCallback<API.Callbacks.GlobalAchievementPercentagesReady>();
-            this._GlobalAchievementPercentagesReadyCallback.OnRun += this.OnGlobalAchievementPercentagesReady;
 
             // Setup inline delay editor
             this._InlineEditBox = new TextBox
@@ -434,16 +433,26 @@ namespace SAM.Game
             this._GameStatusLabel.Text = $"Retrieved {this._AchievementListView.Items.Count} achievements and {this._StatisticsDataGridView.Rows.Count} statistics.";
             this.EnableInput();
 
-            // Request global achievement percentages — result arrives in OnGlobalAchievementPercentagesReady
+            // Request global percentages from Steam and start polling until data arrives
+            this._GlobalPercentRetryCount = 0;
+            this._GlobalPercentTimer.Stop();
             this._SteamClient.SteamUserStats.RequestGlobalAchievementPercentages();
+            this._GlobalPercentTimer.Start();
         }
 
-        private void OnGlobalAchievementPercentagesReady(API.Types.GlobalAchievementPercentagesReady param)
+        private void OnGlobalPercentTick(object sender, EventArgs e)
         {
-            // Fill % Global column for every visible achievement
+            this._GlobalPercentRetryCount++;
+
+            bool anyPending = false;
+
             foreach (ListViewItem item in this._AchievementListView.Items)
             {
                 if (item.Tag is not Stats.AchievementInfo info)
+                    continue;
+
+                // Skip already filled entries
+                if (item.SubItems[5].Text != "...")
                     continue;
 
                 if (this._SteamClient.SteamUserStats.GetAchievementAchievedPercent(info.Id, out float percent))
@@ -452,7 +461,24 @@ namespace SAM.Game
                 }
                 else
                 {
-                    item.SubItems[5].Text = "";
+                    anyPending = true;
+                }
+            }
+
+            // Stop after all filled or after 12 attempts (~1 minute at 5s interval)
+            if (!anyPending || this._GlobalPercentRetryCount >= 12)
+            {
+                this._GlobalPercentTimer.Stop();
+                this._GlobalPercentRetryCount = 0;
+
+                // Mark any still-pending as unavailable
+                if (anyPending)
+                {
+                    foreach (ListViewItem item in this._AchievementListView.Items)
+                    {
+                        if (item.SubItems[5].Text == "...")
+                            item.SubItems[5].Text = "N/A";
+                    }
                 }
             }
         }
@@ -462,6 +488,7 @@ namespace SAM.Game
             this._AchievementListView.Items.Clear();
             this._StatisticsDataGridView.Rows.Clear();
             this._ScheduleOrderCounter = 0;
+            this._GlobalPercentTimer.Stop();
 
             var steamId = this._SteamClient.SteamUser.GetSteamId();
 
