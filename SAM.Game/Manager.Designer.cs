@@ -71,6 +71,8 @@ namespace SAM.Game
             this._GlobalPercentTimer = new System.Windows.Forms.Timer(this.components);
             this._TrayIcon = new System.Windows.Forms.NotifyIcon(this.components);
             this._TrayMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this._TrayMenuStatus = new System.Windows.Forms.ToolStripMenuItem();
+            this._TrayMenuSeparator = new System.Windows.Forms.ToolStripSeparator();
             this._TrayMenuRestore = new System.Windows.Forms.ToolStripMenuItem();
             this._TrayMenuExit = new System.Windows.Forms.ToolStripMenuItem();
             _ToolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
@@ -438,6 +440,17 @@ namespace SAM.Game
             this._GlobalPercentTimer.Interval = 5000;
             this._GlobalPercentTimer.Tick += new System.EventHandler(this.OnGlobalPercentTick);
             // 
+            // _TrayMenuStatus
+            // 
+            this._TrayMenuStatus.Name = "_TrayMenuStatus";
+            this._TrayMenuStatus.Text = "No schedule running";
+            this._TrayMenuStatus.Enabled = false;
+            // 
+            // _TrayMenuSeparator
+            // 
+            this._TrayMenuSeparator.Name = "_TrayMenuSeparator";
+            this._TrayMenuSeparator.Size = new System.Drawing.Size(149, 6);
+            // 
             // _TrayMenuRestore
             // 
             this._TrayMenuRestore.Name = "_TrayMenuRestore";
@@ -454,6 +467,8 @@ namespace SAM.Game
             // _TrayMenu
             // 
             this._TrayMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this._TrayMenuStatus,
+            this._TrayMenuSeparator,
             this._TrayMenuRestore,
             this._TrayMenuExit});
             this._TrayMenu.Name = "_TrayMenu";
@@ -538,6 +553,8 @@ namespace SAM.Game
         // --- Tray ---
         private System.Windows.Forms.NotifyIcon _TrayIcon;
         private System.Windows.Forms.ContextMenuStrip _TrayMenu;
+        private System.Windows.Forms.ToolStripMenuItem _TrayMenuStatus;
+        private System.Windows.Forms.ToolStripSeparator _TrayMenuSeparator;
         private System.Windows.Forms.ToolStripMenuItem _TrayMenuRestore;
         private System.Windows.Forms.ToolStripMenuItem _TrayMenuExit;
     }
