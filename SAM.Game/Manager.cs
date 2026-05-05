@@ -819,11 +819,6 @@ namespace SAM.Game
             {
                 this.Hide();
                 this._TrayIcon.Visible = true;
-                this._TrayIcon.ShowBalloonTip(
-                    1500,
-                    "Steam Achievement Manager",
-                    "Running in background" + (this._ScheduleTimer.Enabled ? " — schedule active." : "."),
-                    System.Windows.Forms.ToolTipIcon.Info);
             }
         }
 
@@ -1266,6 +1261,7 @@ namespace SAM.Game
             this._RunScheduleButton.Enabled = true;
             this._RunScheduleButton.Text = "Run Schedule";
             this._StopScheduleButton.Enabled = false;
+            this._TrayMenuStatus.Text = "No schedule running";
             this._GameStatusLabel.Text = "Schedule stopped.";
         }
 
@@ -1283,8 +1279,10 @@ namespace SAM.Game
 
             var nextName = this._ScheduleQueue[this._ScheduleIndex].Info.Name;
             int totalQueued = this._ScheduleQueue.Count;
-            this._GameStatusLabel.Text =
-                $"[{this._ScheduleIndex + 1}/{totalQueued}] Next: \"{nextName}\" — {(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
+            string statusText = $"[{this._ScheduleIndex + 1}/{totalQueued}] Next: \"{nextName}\" — {(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
+
+            this._GameStatusLabel.Text = statusText;
+            this._TrayMenuStatus.Text = statusText;
         }
 
         private void OnScheduleTick(object sender, EventArgs e)
@@ -1332,6 +1330,7 @@ namespace SAM.Game
                 this._RunScheduleButton.Enabled = true;
                 this._RunScheduleButton.Text = "Run Schedule";
                 this._StopScheduleButton.Enabled = false;
+                this._TrayMenuStatus.Text = "No schedule running";
                 this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
                 MessageBox.Show(this, "All scheduled achievements unlocked!", "Done",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
