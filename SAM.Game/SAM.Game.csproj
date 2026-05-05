@@ -12,7 +12,7 @@
     <FileVersion>7.0.0.0</FileVersion>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>Blank.ico</ApplicationIcon>
+    <ApplicationIcon>sam.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <PropertyGroup>
@@ -37,6 +37,7 @@
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="sam.ico" />
     <Compile Update="DoubleBufferedListView.cs">
       <SubType>Component</SubType>
     </Compile>
