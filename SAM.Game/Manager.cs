@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2024 Rick (rick 'at' gibbed 'dot' us)
+/* Copyright (c) 2024 Rick (rick 'at' gibbed 'dot' us)
  *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
@@ -50,14 +50,21 @@ namespace SAM.Game
 
         private readonly API.Callbacks.UserStatsReceived _UserStatsReceivedCallback;
 
-        //private API.Callback<APITypes.UserStatsStored> UserStatsStoredCallback;
+        // --- Schedule state ---
+        private int _ScheduleOrderCounter = 0;
+        private List<(Stats.AchievementInfo Info, int DelayMs)> _ScheduleQueue;
+        private int _ScheduleIndex;
+
+        // --- Inline delay editor ---
+        private TextBox _InlineEditBox;
+        private ListViewItem _EditingItem;
+        private int _EditingSubItemIndex;
 
         public Manager(long gameId, API.Client client)
         {
             this.InitializeComponent();
 
             this._MainTabControl.SelectedTab = this._AchievementsTabPage;
-            //this.statisticsList.Enabled = this.checkBox1.Checked;
 
             this._AchievementImageList.Images.Add("Blank", new Bitmap(64, 64));
 
@@ -101,7 +108,15 @@ namespace SAM.Game
             this._UserStatsReceivedCallback = client.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
             this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
 
-            //this.UserStatsStoredCallback = new API.Callback(1102, new API.Callback.CallbackFunction(this.OnUserStatsStored));
+            // Setup inline delay editor
+            this._InlineEditBox = new TextBox
+            {
+                Visible = false,
+                BorderStyle = BorderStyle.FixedSingle,
+            };
+            this._AchievementListView.Controls.Add(this._InlineEditBox);
+            this._InlineEditBox.LostFocus += this.InlineEditBox_LostFocus;
+            this._InlineEditBox.KeyDown   += this.InlineEditBox_KeyDown;
 
             this.RefreshStats();
         }
@@ -115,7 +130,8 @@ namespace SAM.Game
             else
             {
                 info.ImageIndex = this._AchievementImageList.Images.Count;
-                this._AchievementImageList.Images.Add(info.IsAchieved == true ? info.IconNormal : info.IconLocked, icon);
+                this._AchievementImageList.Images.Add(info.IsAchieved == true ?
+                    info.IconNormal : info.IconLocked, icon);
             }
         }
 
@@ -164,7 +180,6 @@ namespace SAM.Game
 
             var info = this._IconQueue[0];
             this._IconQueue.RemoveAt(0);
-
 
             this._IconDownloader.DownloadDataAsync(
                 new Uri(_($"https://cdn.steamstatic.com/steamcommunity/public/images/apps/{this._GameId}/{(info.IsAchieved == true ? info.IconNormal : info.IconLocked)}")),
@@ -216,7 +231,7 @@ namespace SAM.Game
                     return false;
                 }
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 return false;
             }
@@ -247,7 +262,6 @@ namespace SAM.Game
 
                 APITypes.UserStatType type;
 
-                // schema in the new format?
                 var typeNode = stat["type"];
                 if (typeNode.Valid == true && typeNode.Type == KeyValueType.String)
                 {
@@ -261,7 +275,6 @@ namespace SAM.Game
                     type = APITypes.UserStatType.Invalid;
                 }
 
-                // schema in the old format?
                 if (type == APITypes.UserStatType.Invalid)
                 {
                     var typeIntNode = stat["type_int"];
@@ -420,11 +433,10 @@ namespace SAM.Game
         {
             this._AchievementListView.Items.Clear();
             this._StatisticsDataGridView.Rows.Clear();
+            this._ScheduleOrderCounter = 0;
 
             var steamId = this._SteamClient.SteamUser.GetSteamId();
 
-            // This still triggers the UserStatsReceived callback, in addition to the callresult.
-            // No need to implement callresults for the time being.
             var callHandle = this._SteamClient.SteamUserStats.RequestUserStats(steamId);
             if (callHandle == API.CallHandle.Invalid)
             {
@@ -448,7 +460,6 @@ namespace SAM.Game
 
             this._AchievementListView.Items.Clear();
             this._AchievementListView.BeginUpdate();
-            //this.Achievements.Clear();
 
             bool wantLocked = this._DisplayLockedOnlyButton.Checked == true;
             bool wantUnlocked = this._DisplayUnlockedOnlyButton.Checked == true;
@@ -495,18 +506,17 @@ namespace SAM.Game
                         ? DateTimeOffset.FromUnixTimeSeconds(unlockTime).LocalDateTime
                         : null,
                     IconNormal = string.IsNullOrEmpty(def.IconNormal) ? null : def.IconNormal,
-                    IconLocked = string.IsNullOrEmpty(def.IconLocked) ? def.IconNormal : def.IconLocked,
-                    Permission = def.Permission,
+                    IconLocked = string.IsNullOrEmpty(def.IconLocked) ? null : def.IconLocked,
                     Name = def.Name,
                     Description = def.Description,
+                    Permission = def.Permission,
                 };
 
-                ListViewItem item = new()
+                var item = new ListViewItem()
                 {
                     Checked = isAchieved,
-                    Tag = info,
-                    Text = info.Name,
-                    BackColor = (def.Permission & 3) == 0 ? Color.Black : Color.FromArgb(64, 0, 0),
+                    Text = def.Name,
+                    BackColor = isAchieved == true ? Color.Black : Color.FromArgb(64, 0, 0),
                 };
 
                 info.Item = item;
@@ -525,6 +535,11 @@ namespace SAM.Game
                     ? info.UnlockTime.Value.ToString()
                     : "");
 
+                // Order and Delay columns (empty by default)
+                item.SubItems.Add("");  // col 3: Order
+                item.SubItems.Add("");  // col 4: Delay (min)
+
+                item.Tag = info;
                 info.ImageIndex = 0;
 
                 this.AddAchievementToIconQueue(info, false);
@@ -887,6 +902,36 @@ namespace SAM.Game
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 e.NewValue = e.CurrentValue;
+                return;
+            }
+
+            // --- Auto-assign schedule order ---
+            if (e.NewValue == CheckState.Checked)
+            {
+                info.ScheduleOrder = ++this._ScheduleOrderCounter;
+                this._AchievementListView.Items[e.Index].SubItems[3].Text =
+                    info.ScheduleOrder.Value.ToString();
+            }
+            else
+            {
+                // Remove order and renumber remaining
+                info.ScheduleOrder = null;
+                this._AchievementListView.Items[e.Index].SubItems[3].Text = "";
+
+                var remaining = new List<Stats.AchievementInfo>();
+                foreach (ListViewItem item in this._AchievementListView.Items)
+                {
+                    if (item.Tag is Stats.AchievementInfo i && i.ScheduleOrder.HasValue)
+                        remaining.Add(i);
+                }
+                remaining.Sort((a, b) => a.ScheduleOrder!.Value.CompareTo(b.ScheduleOrder!.Value));
+                this._ScheduleOrderCounter = 0;
+                foreach (var i in remaining)
+                {
+                    i.ScheduleOrder = ++this._ScheduleOrderCounter;
+                    if (i.Item != null)
+                        i.Item.SubItems[3].Text = i.ScheduleOrder.Value.ToString();
+                }
             }
         }
 
@@ -913,6 +958,165 @@ namespace SAM.Game
         private void OnFilterUpdate(object sender, KeyEventArgs e)
         {
             this.GetAchievements();
+        }
+
+        // -------------------------------------------------------
+        // Inline delay editor (column 4 = Delay (min))
+        // -------------------------------------------------------
+
+        private void OnAchievementListViewMouseClick(object sender, MouseEventArgs e)
+        {
+            var hit = this._AchievementListView.HitTest(e.X, e.Y);
+            if (hit.Item == null || hit.SubItem == null)
+                return;
+
+            int subItemIndex = hit.Item.SubItems.IndexOf(hit.SubItem);
+            if (subItemIndex != 4) // Only Delay column is editable
+                return;
+
+            this._EditingItem = hit.Item;
+            this._EditingSubItemIndex = subItemIndex;
+
+            var bounds = hit.SubItem.Bounds;
+            this._InlineEditBox.SetBounds(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+            this._InlineEditBox.Text = hit.SubItem.Text;
+            this._InlineEditBox.Visible = true;
+            this._InlineEditBox.Focus();
+            this._InlineEditBox.SelectAll();
+        }
+
+        private void CommitInlineEdit()
+        {
+            if (this._EditingItem == null)
+                return;
+
+            if (this._EditingItem.Tag is Stats.AchievementInfo info)
+            {
+                string text = this._InlineEditBox.Text.Trim();
+                if (int.TryParse(text, out int delay) && delay >= 0)
+                {
+                    info.DelayMinutes = delay;
+                    this._EditingItem.SubItems[4].Text = delay.ToString();
+                }
+                else
+                {
+                    info.DelayMinutes = 0;
+                    this._EditingItem.SubItems[4].Text = "0";
+                }
+            }
+
+            this._InlineEditBox.Visible = false;
+            this._EditingItem = null;
+        }
+
+        private void InlineEditBox_LostFocus(object sender, EventArgs e)
+        {
+            this.CommitInlineEdit();
+        }
+
+        private void InlineEditBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Return)
+            {
+                this.CommitInlineEdit();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                this._InlineEditBox.Visible = false;
+                this._EditingItem = null;
+                e.Handled = true;
+            }
+        }
+
+        // -------------------------------------------------------
+        // Schedule: Run button + Timer tick
+        // -------------------------------------------------------
+
+        private void OnRunSchedule(object sender, EventArgs e)
+        {
+            var entries = new List<(Stats.AchievementInfo Info, int DelayMs)>();
+            foreach (ListViewItem item in this._AchievementListView.Items)
+            {
+                if (item.Tag is not Stats.AchievementInfo info)
+                    continue;
+                if (info.ScheduleOrder == null)
+                    continue;
+                entries.Add((info, info.DelayMinutes * 60 * 1000));
+            }
+
+            if (entries.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "No achievements scheduled.\nCheck achievements to add them to the schedule.",
+                    "Schedule", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            entries.Sort((a, b) => a.Info.ScheduleOrder!.Value.CompareTo(b.Info.ScheduleOrder!.Value));
+
+            this._ScheduleQueue = entries;
+            this._ScheduleIndex = 0;
+            this._RunScheduleButton.Enabled = false;
+            this._RunScheduleButton.Text = "Running...";
+
+            int firstDelay = this._ScheduleQueue[0].DelayMs;
+            this._ScheduleTimer.Interval = firstDelay > 0 ? firstDelay : 1000;
+            this._ScheduleTimer.Start();
+
+            var firstName = this._ScheduleQueue[0].Info.Name;
+            var firstMins = this._ScheduleQueue[0].Info.DelayMinutes;
+            this._GameStatusLabel.Text =
+                $"Schedule started. Next: \"{firstName}\" in {firstMins} min.";
+        }
+
+        private void OnScheduleTick(object sender, EventArgs e)
+        {
+            this._ScheduleTimer.Stop();
+
+            if (this._ScheduleQueue == null || this._ScheduleIndex >= this._ScheduleQueue.Count)
+            {
+                this._RunScheduleButton.Enabled = true;
+                this._RunScheduleButton.Text = "Run Schedule";
+                return;
+            }
+
+            var entry = this._ScheduleQueue[this._ScheduleIndex];
+
+            // Unlock in Steam
+            entry.Info.IsAchieved = true;
+            this._SteamClient.SteamUserStats.SetAchievement(entry.Info.Id, true);
+            this._SteamClient.SteamUserStats.StoreStats();
+
+            // Update checkbox in ListView
+            if (entry.Info.Item != null)
+            {
+                this._IsUpdatingAchievementList = true;
+                entry.Info.Item.Checked = true;
+                entry.Info.Item.BackColor = Color.Black;
+                this._IsUpdatingAchievementList = false;
+            }
+
+            this._ScheduleIndex++;
+
+            if (this._ScheduleIndex < this._ScheduleQueue.Count)
+            {
+                var next = this._ScheduleQueue[this._ScheduleIndex];
+                int nextDelay = next.DelayMs > 0 ? next.DelayMs : 1000;
+                this._ScheduleTimer.Interval = nextDelay;
+                this._ScheduleTimer.Start();
+
+                this._GameStatusLabel.Text =
+                    $"Unlocked \"{entry.Info.Name}\". Next: \"{next.Info.Name}\" in {next.Info.DelayMinutes} min.";
+            }
+            else
+            {
+                this._RunScheduleButton.Enabled = true;
+                this._RunScheduleButton.Text = "Run Schedule";
+                this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
+                MessageBox.Show(this, "All scheduled achievements unlocked!", "Done",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
     }
 }
