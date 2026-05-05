@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2024 Rick (rick 'at' gibbed 'dot' us)
+/* Copyright (c) 2024 Rick (rick 'at' gibbed 'dot' us)
  *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
@@ -36,6 +36,10 @@ namespace SAM.Game.Stats
         public string Name;
         public string Description;
         public ListViewItem Item;
+
+        // --- Schedule fields ---
+        public int? ScheduleOrder { get; set; }
+        public int DelayMinutes { get; set; } = 0;
 
         #region public int ImageIndex;
         public int ImageIndex
