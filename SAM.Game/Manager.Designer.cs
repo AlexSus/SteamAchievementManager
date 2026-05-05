@@ -68,6 +68,7 @@ namespace SAM.Game
             this._StatisticsDataGridView = new System.Windows.Forms.DataGridView();
             this._ScheduleTimer = new System.Windows.Forms.Timer(this.components);
             this._CountdownTimer = new System.Windows.Forms.Timer(this.components);
+            this._GlobalPercentTimer = new System.Windows.Forms.Timer(this.components);
             _ToolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             _ToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this._MainToolStrip.SuspendLayout();
@@ -427,6 +428,11 @@ namespace SAM.Game
             this._CountdownTimer.Interval = 1000;
             this._CountdownTimer.Tick += new System.EventHandler(this.OnCountdownTick);
             // 
+            // _GlobalPercentTimer
+            // 
+            this._GlobalPercentTimer.Interval = 5000;
+            this._GlobalPercentTimer.Tick += new System.EventHandler(this.OnGlobalPercentTick);
+            // 
             // Manager
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -495,5 +501,6 @@ namespace SAM.Game
         private System.Windows.Forms.ToolStripButton _StopScheduleButton;
         private System.Windows.Forms.Timer _ScheduleTimer;
         private System.Windows.Forms.Timer _CountdownTimer;
+        private System.Windows.Forms.Timer _GlobalPercentTimer;
     }
 }
