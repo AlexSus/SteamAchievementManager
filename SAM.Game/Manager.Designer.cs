@@ -69,6 +69,10 @@ namespace SAM.Game
             this._ScheduleTimer = new System.Windows.Forms.Timer(this.components);
             this._CountdownTimer = new System.Windows.Forms.Timer(this.components);
             this._GlobalPercentTimer = new System.Windows.Forms.Timer(this.components);
+            this._TrayIcon = new System.Windows.Forms.NotifyIcon(this.components);
+            this._TrayMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this._TrayMenuRestore = new System.Windows.Forms.ToolStripMenuItem();
+            this._TrayMenuExit = new System.Windows.Forms.ToolStripMenuItem();
             _ToolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             _ToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this._MainToolStrip.SuspendLayout();
@@ -434,6 +438,34 @@ namespace SAM.Game
             this._GlobalPercentTimer.Interval = 5000;
             this._GlobalPercentTimer.Tick += new System.EventHandler(this.OnGlobalPercentTick);
             // 
+            // _TrayMenuRestore
+            // 
+            this._TrayMenuRestore.Name = "_TrayMenuRestore";
+            this._TrayMenuRestore.Text = "Restore";
+            this._TrayMenuRestore.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+            this._TrayMenuRestore.Click += new System.EventHandler(this.OnTrayRestore);
+            // 
+            // _TrayMenuExit
+            // 
+            this._TrayMenuExit.Name = "_TrayMenuExit";
+            this._TrayMenuExit.Text = "Exit";
+            this._TrayMenuExit.Click += new System.EventHandler(this.OnTrayExit);
+            // 
+            // _TrayMenu
+            // 
+            this._TrayMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this._TrayMenuRestore,
+            this._TrayMenuExit});
+            this._TrayMenu.Name = "_TrayMenu";
+            this._TrayMenu.Size = new System.Drawing.Size(120, 48);
+            // 
+            // _TrayIcon
+            // 
+            this._TrayIcon.ContextMenuStrip = this._TrayMenu;
+            this._TrayIcon.Text = "Steam Achievement Manager";
+            this._TrayIcon.Visible = false;
+            this._TrayIcon.DoubleClick += new System.EventHandler(this.OnTrayRestore);
+            // 
             // Manager
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -503,5 +535,10 @@ namespace SAM.Game
         private System.Windows.Forms.Timer _ScheduleTimer;
         private System.Windows.Forms.Timer _CountdownTimer;
         private System.Windows.Forms.Timer _GlobalPercentTimer;
+        // --- Tray ---
+        private System.Windows.Forms.NotifyIcon _TrayIcon;
+        private System.Windows.Forms.ContextMenuStrip _TrayMenu;
+        private System.Windows.Forms.ToolStripMenuItem _TrayMenuRestore;
+        private System.Windows.Forms.ToolStripMenuItem _TrayMenuExit;
     }
 }
