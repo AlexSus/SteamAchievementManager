@@ -51,9 +51,11 @@ namespace SAM.Game
         private readonly API.Callbacks.UserStatsReceived _UserStatsReceivedCallback;
 
         // --- Schedule state ---
+        private readonly Random _Random = new Random();
         private int _ScheduleOrderCounter = 0;
         private List<(Stats.AchievementInfo Info, int DelayMs)> _ScheduleQueue;
         private int _ScheduleIndex;
+        private DateTime _NextUnlockTime;
 
         // --- Inline delay editor ---
         private TextBox _InlineEditBox;
@@ -521,6 +523,10 @@ namespace SAM.Game
 
                 info.Item = item;
 
+                // [1] Order — empty initially
+                item.SubItems.Add("");
+
+                // [2] Description
                 if (item.Text.StartsWith("#", StringComparison.InvariantCulture) == true)
                 {
                     item.Text = info.Id;
@@ -531,13 +537,13 @@ namespace SAM.Game
                     item.SubItems.Add(info.Description);
                 }
 
+                // [3] Delay (min) — empty initially
+                item.SubItems.Add("");
+
+                // [4] Unlock Time
                 item.SubItems.Add(info.UnlockTime.HasValue == true
                     ? info.UnlockTime.Value.ToString()
                     : "");
-
-                // Order and Delay columns (empty by default)
-                item.SubItems.Add("");  // col 3: Order
-                item.SubItems.Add("");  // col 4: Delay (min)
 
                 item.Tag = info;
                 info.ImageIndex = 0;
@@ -909,14 +915,17 @@ namespace SAM.Game
             if (e.NewValue == CheckState.Checked)
             {
                 info.ScheduleOrder = ++this._ScheduleOrderCounter;
-                this._AchievementListView.Items[e.Index].SubItems[3].Text =
+                this._AchievementListView.Items[e.Index].SubItems[1].Text =
                     info.ScheduleOrder.Value.ToString();
+                this._AchievementListView.Items[e.Index].BackColor = Color.FromArgb(0, 72, 0);
             }
             else
             {
                 // Remove order and renumber remaining
                 info.ScheduleOrder = null;
-                this._AchievementListView.Items[e.Index].SubItems[3].Text = "";
+                this._AchievementListView.Items[e.Index].SubItems[1].Text = "";
+                this._AchievementListView.Items[e.Index].BackColor =
+                    info.IsAchieved ? Color.Black : Color.FromArgb(64, 0, 0);
 
                 var remaining = new List<Stats.AchievementInfo>();
                 foreach (ListViewItem item in this._AchievementListView.Items)
@@ -930,7 +939,7 @@ namespace SAM.Game
                 {
                     i.ScheduleOrder = ++this._ScheduleOrderCounter;
                     if (i.Item != null)
-                        i.Item.SubItems[3].Text = i.ScheduleOrder.Value.ToString();
+                        i.Item.SubItems[1].Text = i.ScheduleOrder.Value.ToString();
                 }
             }
         }
@@ -971,7 +980,7 @@ namespace SAM.Game
                 return;
 
             int subItemIndex = hit.Item.SubItems.IndexOf(hit.SubItem);
-            if (subItemIndex != 4) // Only Delay column is editable
+            if (subItemIndex != 3) // Only Delay column is editable
                 return;
 
             this._EditingItem = hit.Item;
@@ -993,15 +1002,15 @@ namespace SAM.Game
             if (this._EditingItem.Tag is Stats.AchievementInfo info)
             {
                 string text = this._InlineEditBox.Text.Trim();
-                if (int.TryParse(text, out int delay) && delay >= 0)
+                if (int.TryParse(text, out int delay) && delay > 0)
                 {
                     info.DelayMinutes = delay;
-                    this._EditingItem.SubItems[4].Text = delay.ToString();
+                    this._EditingItem.SubItems[3].Text = delay.ToString();
                 }
                 else
                 {
                     info.DelayMinutes = 0;
-                    this._EditingItem.SubItems[4].Text = "0";
+                    this._EditingItem.SubItems[3].Text = "";
                 }
             }
 
@@ -1042,7 +1051,11 @@ namespace SAM.Game
                     continue;
                 if (info.ScheduleOrder == null)
                     continue;
-                entries.Add((info, info.DelayMinutes * 60 * 1000));
+
+                // Base delay + random 0–59 seconds so it never fires at exactly round minute
+                int baseMs = info.DelayMinutes * 60 * 1000;
+                int randomMs = info.DelayMinutes > 0 ? this._Random.Next(0, 60) * 1000 : 0;
+                entries.Add((info, baseMs + randomMs));
             }
 
             if (entries.Count == 0)
@@ -1058,16 +1071,43 @@ namespace SAM.Game
             this._ScheduleQueue = entries;
             this._ScheduleIndex = 0;
             this._RunScheduleButton.Enabled = false;
+            this._StopScheduleButton.Enabled = true;
             this._RunScheduleButton.Text = "Running...";
 
             int firstDelay = this._ScheduleQueue[0].DelayMs;
             this._ScheduleTimer.Interval = firstDelay > 0 ? firstDelay : 1000;
+            this._NextUnlockTime = DateTime.Now.AddMilliseconds(this._ScheduleTimer.Interval);
             this._ScheduleTimer.Start();
+            this._CountdownTimer.Start();
+        }
 
-            var firstName = this._ScheduleQueue[0].Info.Name;
-            var firstMins = this._ScheduleQueue[0].Info.DelayMinutes;
+        private void OnStopSchedule(object sender, EventArgs e)
+        {
+            this._ScheduleTimer.Stop();
+            this._CountdownTimer.Stop();
+            this._ScheduleQueue = null;
+            this._RunScheduleButton.Enabled = true;
+            this._RunScheduleButton.Text = "Run Schedule";
+            this._StopScheduleButton.Enabled = false;
+            this._GameStatusLabel.Text = "Schedule stopped.";
+        }
+
+        private void OnCountdownTick(object sender, EventArgs e)
+        {
+            if (this._ScheduleQueue == null || this._ScheduleIndex >= this._ScheduleQueue.Count)
+            {
+                this._CountdownTimer.Stop();
+                return;
+            }
+
+            var remaining = this._NextUnlockTime - DateTime.Now;
+            if (remaining.TotalSeconds < 0)
+                remaining = TimeSpan.Zero;
+
+            var nextName = this._ScheduleQueue[this._ScheduleIndex].Info.Name;
+            int totalQueued = this._ScheduleQueue.Count;
             this._GameStatusLabel.Text =
-                $"Schedule started. Next: \"{firstName}\" in {firstMins} min.";
+                $"[{this._ScheduleIndex + 1}/{totalQueued}] Next: \"{nextName}\" — {(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
         }
 
         private void OnScheduleTick(object sender, EventArgs e)
@@ -1076,8 +1116,10 @@ namespace SAM.Game
 
             if (this._ScheduleQueue == null || this._ScheduleIndex >= this._ScheduleQueue.Count)
             {
+                this._CountdownTimer.Stop();
                 this._RunScheduleButton.Enabled = true;
                 this._RunScheduleButton.Text = "Run Schedule";
+                this._StopScheduleButton.Enabled = false;
                 return;
             }
 
@@ -1088,7 +1130,7 @@ namespace SAM.Game
             this._SteamClient.SteamUserStats.SetAchievement(entry.Info.Id, true);
             this._SteamClient.SteamUserStats.StoreStats();
 
-            // Update checkbox in ListView
+            // Update row in ListView
             if (entry.Info.Item != null)
             {
                 this._IsUpdatingAchievementList = true;
@@ -1104,15 +1146,15 @@ namespace SAM.Game
                 var next = this._ScheduleQueue[this._ScheduleIndex];
                 int nextDelay = next.DelayMs > 0 ? next.DelayMs : 1000;
                 this._ScheduleTimer.Interval = nextDelay;
+                this._NextUnlockTime = DateTime.Now.AddMilliseconds(nextDelay);
                 this._ScheduleTimer.Start();
-
-                this._GameStatusLabel.Text =
-                    $"Unlocked \"{entry.Info.Name}\". Next: \"{next.Info.Name}\" in {next.Info.DelayMinutes} min.";
             }
             else
             {
+                this._CountdownTimer.Stop();
                 this._RunScheduleButton.Enabled = true;
                 this._RunScheduleButton.Text = "Run Schedule";
+                this._StopScheduleButton.Enabled = false;
                 this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
                 MessageBox.Show(this, "All scheduled achievements unlocked!", "Done",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
