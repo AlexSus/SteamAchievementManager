@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2024 Rick (rick 'at' gibbed 'dot' us)
+/* Copyright (c) 2024 Rick (rick 'at' gibbed 'dot' us)
  *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
@@ -227,6 +227,34 @@ namespace SAM.API.Wrappers
                 this.Functions.ResetAllStats,
                 this.ObjectAddress,
                 achievementsToo);
+        }
+        #endregion
+
+        #region RequestGlobalAchievementPercentages
+        [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
+        private delegate ulong NativeRequestGlobalAchievementPercentages(IntPtr self);
+
+        public void RequestGlobalAchievementPercentages()
+        {
+            this.Call<ulong, NativeRequestGlobalAchievementPercentages>(
+                this.Functions.RequestGlobalAchievementPercentages,
+                this.ObjectAddress);
+        }
+        #endregion
+
+        #region GetAchievementAchievedPercent
+        [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        private delegate bool NativeGetAchievementAchievedPercent(IntPtr self, IntPtr name, out float percent);
+
+        public bool GetAchievementAchievedPercent(string name, out float percent)
+        {
+            using (var nativeName = NativeStrings.StringToStringHandle(name))
+            {
+                var call = this.GetFunction<NativeGetAchievementAchievedPercent>(
+                    this.Functions.GetAchievementAchievedPercent);
+                return call(this.ObjectAddress, nativeName.Handle, out percent);
+            }
         }
         #endregion
     }
