@@ -473,6 +473,7 @@ namespace SAM.Game
             this._TrayMenuExit});
             this._TrayMenu.Name = "_TrayMenu";
             this._TrayMenu.Size = new System.Drawing.Size(120, 48);
+            this._TrayMenu.Opening += new System.ComponentModel.CancelEventHandler(this.OnTrayMenuOpening);
             // 
             // _TrayIcon
             // 
