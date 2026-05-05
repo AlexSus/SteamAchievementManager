@@ -61,10 +61,12 @@ namespace SAM.Game
             this._MatchingStringTextBox = new System.Windows.Forms.ToolStripTextBox();
             this._ToolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this._RunScheduleButton = new System.Windows.Forms.ToolStripButton();
+            this._StopScheduleButton = new System.Windows.Forms.ToolStripButton();
             this._StatisticsTabPage = new System.Windows.Forms.TabPage();
             this._EnableStatsEditingCheckBox = new System.Windows.Forms.CheckBox();
             this._StatisticsDataGridView = new System.Windows.Forms.DataGridView();
             this._ScheduleTimer = new System.Windows.Forms.Timer(this.components);
+            this._CountdownTimer = new System.Windows.Forms.Timer(this.components);
             _ToolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             _ToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this._MainToolStrip.SuspendLayout();
@@ -204,10 +206,10 @@ namespace SAM.Game
             this._AchievementListView.CheckBoxes = true;
             this._AchievementListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this._AchievementNameColumnHeader,
-            this._AchievementDescriptionColumnHeader,
-            this._AchievementUnlockTimeColumnHeader,
             this._AchievementOrderColumnHeader,
-            this._AchievementDelayColumnHeader});
+            this._AchievementDescriptionColumnHeader,
+            this._AchievementDelayColumnHeader,
+            this._AchievementUnlockTimeColumnHeader});
             this._AchievementListView.Dock = System.Windows.Forms.DockStyle.Fill;
             this._AchievementListView.ForeColor = System.Drawing.Color.White;
             this._AchievementListView.FullRowSelect = true;
@@ -264,7 +266,8 @@ namespace SAM.Game
             this._MatchingStringLabel,
             this._MatchingStringTextBox,
             this._ToolStripSeparator3,
-            this._RunScheduleButton});
+            this._RunScheduleButton,
+            this._StopScheduleButton});
             this._AchievementsToolStrip.Location = new System.Drawing.Point(3, 3);
             this._AchievementsToolStrip.Name = "_AchievementsToolStrip";
             this._AchievementsToolStrip.Size = new System.Drawing.Size(682, 25);
@@ -358,6 +361,15 @@ namespace SAM.Game
             this._RunScheduleButton.ToolTipText = "Unlock checked achievements in order with specified delays.";
             this._RunScheduleButton.Click += new System.EventHandler(this.OnRunSchedule);
             // 
+            // _StopScheduleButton
+            // 
+            this._StopScheduleButton.Name = "_StopScheduleButton";
+            this._StopScheduleButton.Size = new System.Drawing.Size(85, 22);
+            this._StopScheduleButton.Text = "Stop Schedule";
+            this._StopScheduleButton.ToolTipText = "Stop the running schedule.";
+            this._StopScheduleButton.Enabled = false;
+            this._StopScheduleButton.Click += new System.EventHandler(this.OnStopSchedule);
+            // 
             // _StatisticsTabPage
             // 
             this._StatisticsTabPage.Controls.Add(this._EnableStatsEditingCheckBox);
@@ -402,6 +414,11 @@ namespace SAM.Game
             // _ScheduleTimer
             // 
             this._ScheduleTimer.Tick += new System.EventHandler(this.OnScheduleTick);
+            // 
+            // _CountdownTimer
+            // 
+            this._CountdownTimer.Interval = 1000;
+            this._CountdownTimer.Tick += new System.EventHandler(this.OnCountdownTick);
             // 
             // Manager
             // 
@@ -467,6 +484,8 @@ namespace SAM.Game
         private System.Windows.Forms.ColumnHeader _AchievementDelayColumnHeader;
         private System.Windows.Forms.ToolStripSeparator _ToolStripSeparator3;
         private System.Windows.Forms.ToolStripButton _RunScheduleButton;
+        private System.Windows.Forms.ToolStripButton _StopScheduleButton;
         private System.Windows.Forms.Timer _ScheduleTimer;
+        private System.Windows.Forms.Timer _CountdownTimer;
     }
 }
