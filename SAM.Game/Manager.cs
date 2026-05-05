@@ -128,6 +128,10 @@ namespace SAM.Game
             this._InlineEditBox.LostFocus += this.InlineEditBox_LostFocus;
             this._InlineEditBox.KeyDown   += this.InlineEditBox_KeyDown;
 
+            // Tray icon — reuse the form's own icon
+            this._TrayIcon.Icon = this.Icon;
+            this.Resize += this.OnFormResize;
+
             this.RefreshStats();
         }
 
@@ -807,6 +811,34 @@ namespace SAM.Game
             this._CallbackTimer.Enabled = false;
             this._SteamClient.RunCallbacks(false);
             this._CallbackTimer.Enabled = true;
+        }
+
+        private void OnFormResize(object sender, EventArgs e)
+        {
+            if (this.WindowState == FormWindowState.Minimized)
+            {
+                this.Hide();
+                this._TrayIcon.Visible = true;
+                this._TrayIcon.ShowBalloonTip(
+                    1500,
+                    "Steam Achievement Manager",
+                    "Running in background" + (this._ScheduleTimer.Enabled ? " — schedule active." : "."),
+                    System.Windows.Forms.ToolTipIcon.Info);
+            }
+        }
+
+        private void OnTrayRestore(object sender, EventArgs e)
+        {
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+            this.Activate();
+            this._TrayIcon.Visible = false;
+        }
+
+        private void OnTrayExit(object sender, EventArgs e)
+        {
+            this._TrayIcon.Visible = false;
+            Application.Exit();
         }
 
         private void OnRefresh(object sender, EventArgs e)
