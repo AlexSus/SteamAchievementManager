@@ -838,6 +838,8 @@ namespace SAM.Game
                 this._TrayMenuStatus.Text = "No schedule running";
             }
         }
+
+        private void OnTrayRestore(object sender, EventArgs e)
         {
             this.Show();
             this.WindowState = FormWindowState.Normal;
