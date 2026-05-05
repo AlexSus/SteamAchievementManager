@@ -49,6 +49,7 @@ namespace SAM.Game
         private readonly BindingList<Stats.StatInfo> _Statistics = new();
 
         private readonly API.Callbacks.UserStatsReceived _UserStatsReceivedCallback;
+        private readonly API.Callbacks.GlobalAchievementPercentagesReady _GlobalAchievementPercentagesReadyCallback;
 
         // --- Schedule state ---
         private readonly Random _Random = new Random();
@@ -109,6 +110,9 @@ namespace SAM.Game
 
             this._UserStatsReceivedCallback = client.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
             this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
+
+            this._GlobalAchievementPercentagesReadyCallback = client.CreateAndRegisterCallback<API.Callbacks.GlobalAchievementPercentagesReady>();
+            this._GlobalAchievementPercentagesReadyCallback.OnRun += this.OnGlobalAchievementPercentagesReady;
 
             // Setup inline delay editor
             this._InlineEditBox = new TextBox
@@ -429,6 +433,28 @@ namespace SAM.Game
 
             this._GameStatusLabel.Text = $"Retrieved {this._AchievementListView.Items.Count} achievements and {this._StatisticsDataGridView.Rows.Count} statistics.";
             this.EnableInput();
+
+            // Request global achievement percentages — result arrives in OnGlobalAchievementPercentagesReady
+            this._SteamClient.SteamUserStats.RequestGlobalAchievementPercentages();
+        }
+
+        private void OnGlobalAchievementPercentagesReady(API.Types.GlobalAchievementPercentagesReady param)
+        {
+            // Fill % Global column for every visible achievement
+            foreach (ListViewItem item in this._AchievementListView.Items)
+            {
+                if (item.Tag is not Stats.AchievementInfo info)
+                    continue;
+
+                if (this._SteamClient.SteamUserStats.GetAchievementAchievedPercent(info.Id, out float percent))
+                {
+                    item.SubItems[5].Text = percent.ToString("0.0") + "%";
+                }
+                else
+                {
+                    item.SubItems[5].Text = "";
+                }
+            }
         }
 
         private void RefreshStats()
@@ -544,6 +570,9 @@ namespace SAM.Game
                 item.SubItems.Add(info.UnlockTime.HasValue == true
                     ? info.UnlockTime.Value.ToString()
                     : "");
+
+                // [5] % Global — filled later by OnGlobalAchievementPercentagesReady
+                item.SubItems.Add("...");
 
                 item.Tag = info;
                 info.ImageIndex = 0;
