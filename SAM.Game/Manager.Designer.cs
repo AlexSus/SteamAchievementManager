@@ -223,10 +223,11 @@ namespace SAM.Game
             this._AchievementListView.Name = "_AchievementListView";
             this._AchievementListView.Size = new System.Drawing.Size(682, 277);
             this._AchievementListView.SmallImageList = this._AchievementImageList;
-            this._AchievementListView.Sorting = System.Windows.Forms.SortOrder.Ascending;
+            this._AchievementListView.Sorting = System.Windows.Forms.SortOrder.None;
             this._AchievementListView.TabIndex = 4;
             this._AchievementListView.UseCompatibleStateImageBehavior = false;
             this._AchievementListView.View = System.Windows.Forms.View.Details;
+            this._AchievementListView.ColumnClick += new System.Windows.Forms.ColumnClickEventHandler(this.OnAchievementColumnClick);
             this._AchievementListView.ItemCheck += new System.Windows.Forms.ItemCheckEventHandler(this.OnCheckAchievement);
             this._AchievementListView.MouseClick += new System.Windows.Forms.MouseEventHandler(this.OnAchievementListViewMouseClick);
             // 
