@@ -59,6 +59,11 @@ namespace SAM.Game
 
         // --- Global percent polling ---
         private int _GlobalPercentRetryCount = 0;
+        private readonly Dictionary<string, float> _GlobalPercentCache = new();
+
+        // --- Sort state ---
+        private int _SortColumn = -1;
+        private SortOrder _SortOrder = SortOrder.None;
 
         // --- Inline delay editor ---
         private TextBox _InlineEditBox;
@@ -433,11 +438,18 @@ namespace SAM.Game
             this._GameStatusLabel.Text = $"Retrieved {this._AchievementListView.Items.Count} achievements and {this._StatisticsDataGridView.Rows.Count} statistics.";
             this.EnableInput();
 
-            // Request global percentages from Steam and start polling until data arrives
-            this._GlobalPercentRetryCount = 0;
-            this._GlobalPercentTimer.Stop();
-            this._SteamClient.SteamUserStats.RequestGlobalAchievementPercentages();
-            this._GlobalPercentTimer.Start();
+            // Request global percentages only if some entries are still missing from cache
+            bool hasPending = this._AchievementListView.Items
+                .Cast<ListViewItem>()
+                .Any(i => i.SubItems[5].Text == "...");
+
+            if (hasPending)
+            {
+                this._GlobalPercentRetryCount = 0;
+                this._GlobalPercentTimer.Stop();
+                this._SteamClient.SteamUserStats.RequestGlobalAchievementPercentages();
+                this._GlobalPercentTimer.Start();
+            }
         }
 
         private void OnGlobalPercentTick(object sender, EventArgs e)
@@ -458,6 +470,7 @@ namespace SAM.Game
                 if (this._SteamClient.SteamUserStats.GetAchievementAchievedPercent(info.Id, out float percent))
                 {
                     item.SubItems[5].Text = percent.ToString("0.0") + "%";
+                    this._GlobalPercentCache[info.Id] = percent;
                 }
                 else
                 {
@@ -598,8 +611,10 @@ namespace SAM.Game
                     ? info.UnlockTime.Value.ToString()
                     : "");
 
-                // [5] % Global — filled later by OnGlobalAchievementPercentagesReady
-                item.SubItems.Add("...");
+                // [5] % Global — from cache if available, else "..." until polling fills it
+                item.SubItems.Add(this._GlobalPercentCache.TryGetValue(def.Id, out float cachedPct)
+                    ? cachedPct.ToString("0.0") + "%"
+                    : "...");
 
                 item.Tag = info;
                 info.ImageIndex = 0;
@@ -1023,6 +1038,80 @@ namespace SAM.Game
         private void OnFilterUpdate(object sender, KeyEventArgs e)
         {
             this.GetAchievements();
+        }
+
+        // -------------------------------------------------------
+        // Column header sorting
+        // -------------------------------------------------------
+
+        private void OnAchievementColumnClick(object sender, ColumnClickEventArgs e)
+        {
+            // Only sort Name (0), Unlock Time (4), % Global (5)
+            if (e.Column != 0 && e.Column != 4 && e.Column != 5)
+                return;
+
+            if (e.Column == this._SortColumn)
+            {
+                this._SortOrder = this._SortOrder == SortOrder.Ascending
+                    ? SortOrder.Descending
+                    : SortOrder.Ascending;
+            }
+            else
+            {
+                this._SortColumn = e.Column;
+                this._SortOrder = SortOrder.Ascending;
+            }
+
+            this._AchievementListView.ListViewItemSorter =
+                new AchievementListComparer(this._SortColumn, this._SortOrder);
+            this._AchievementListView.Sort();
+        }
+
+        private sealed class AchievementListComparer : System.Collections.IComparer
+        {
+            private readonly int _Column;
+            private readonly SortOrder _Order;
+
+            public AchievementListComparer(int column, SortOrder order)
+            {
+                this._Column = column;
+                this._Order = order;
+            }
+
+            public int Compare(object x, object y)
+            {
+                var ix = (ListViewItem)x;
+                var iy = (ListViewItem)y;
+
+                string tx = ix.SubItems.Count > this._Column ? ix.SubItems[this._Column].Text : "";
+                string ty = iy.SubItems.Count > this._Column ? iy.SubItems[this._Column].Text : "";
+
+                int result;
+
+                if (this._Column == 5) // % Global — numeric
+                {
+                    float fx = float.TryParse(tx.TrimEnd('%'), System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out float fxv) ? fxv : -1f;
+                    float fy = float.TryParse(ty.TrimEnd('%'), System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out float fyv) ? fyv : -1f;
+                    result = fx.CompareTo(fy);
+                }
+                else if (this._Column == 4) // Unlock Time — date, empty goes to end
+                {
+                    bool hx = DateTime.TryParse(tx, out DateTime dtx);
+                    bool hy = DateTime.TryParse(ty, out DateTime dty);
+                    if (!hx && !hy) result = 0;
+                    else if (!hx) result = 1;
+                    else if (!hy) result = -1;
+                    else result = dtx.CompareTo(dty);
+                }
+                else // Name — case-insensitive string
+                {
+                    result = string.Compare(tx, ty, StringComparison.OrdinalIgnoreCase);
+                }
+
+                return this._Order == SortOrder.Descending ? -result : result;
+            }
         }
 
         // -------------------------------------------------------
