@@ -50,6 +50,7 @@ namespace SAM.Game
             this._AchievementUnlockTimeColumnHeader = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this._AchievementOrderColumnHeader = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this._AchievementDelayColumnHeader = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this._AchievementGlobalPercentColumnHeader = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this._AchievementsToolStrip = new System.Windows.Forms.ToolStrip();
             this._LockAllButton = new System.Windows.Forms.ToolStripButton();
             this._InvertAllButton = new System.Windows.Forms.ToolStripButton();
@@ -209,7 +210,8 @@ namespace SAM.Game
             this._AchievementOrderColumnHeader,
             this._AchievementDescriptionColumnHeader,
             this._AchievementDelayColumnHeader,
-            this._AchievementUnlockTimeColumnHeader});
+            this._AchievementUnlockTimeColumnHeader,
+            this._AchievementGlobalPercentColumnHeader});
             this._AchievementListView.Dock = System.Windows.Forms.DockStyle.Fill;
             this._AchievementListView.ForeColor = System.Drawing.Color.White;
             this._AchievementListView.FullRowSelect = true;
@@ -241,6 +243,11 @@ namespace SAM.Game
             // 
             this._AchievementUnlockTimeColumnHeader.Text = "Unlock Time";
             this._AchievementUnlockTimeColumnHeader.Width = 160;
+            // 
+            // _AchievementGlobalPercentColumnHeader
+            // 
+            this._AchievementGlobalPercentColumnHeader.Text = "% Global";
+            this._AchievementGlobalPercentColumnHeader.Width = 70;
             // 
             // _AchievementOrderColumnHeader
             // 
@@ -482,6 +489,7 @@ namespace SAM.Game
         // --- Schedule additions ---
         private System.Windows.Forms.ColumnHeader _AchievementOrderColumnHeader;
         private System.Windows.Forms.ColumnHeader _AchievementDelayColumnHeader;
+        private System.Windows.Forms.ColumnHeader _AchievementGlobalPercentColumnHeader;
         private System.Windows.Forms.ToolStripSeparator _ToolStripSeparator3;
         private System.Windows.Forms.ToolStripButton _RunScheduleButton;
         private System.Windows.Forms.ToolStripButton _StopScheduleButton;
