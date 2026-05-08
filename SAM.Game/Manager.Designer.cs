@@ -69,6 +69,7 @@ namespace SAM.Game
             this._ScheduleTimer = new System.Windows.Forms.Timer(this.components);
             this._CountdownTimer = new System.Windows.Forms.Timer(this.components);
             this._GlobalPercentTimer = new System.Windows.Forms.Timer(this.components);
+            this._RestartTimer = new System.Windows.Forms.Timer(this.components);
             this._ReconnectTimer = new System.Windows.Forms.Timer(this.components);
             this._TrayIcon = new System.Windows.Forms.NotifyIcon(this.components);
             this._TrayMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
@@ -441,6 +442,11 @@ namespace SAM.Game
             this._GlobalPercentTimer.Interval = 5000;
             this._GlobalPercentTimer.Tick += new System.EventHandler(this.OnGlobalPercentTick);
             // 
+            // _RestartTimer
+            // 
+            this._RestartTimer.Interval = 3000;
+            this._RestartTimer.Tick += new System.EventHandler(this.OnRestartTimerTick);
+            // 
             // _ReconnectTimer — fires once after 10s to reinitialize Steam client
             // 
             this._ReconnectTimer.Interval = 10000;
@@ -486,7 +492,7 @@ namespace SAM.Game
             this._TrayIcon.ContextMenuStrip = this._TrayMenu;
             this._TrayIcon.Text = "Steam Achievement Manager";
             this._TrayIcon.Visible = false;
-            this._TrayIcon.DoubleClick += new System.EventHandler(this.OnTrayRestore);
+            this._TrayIcon.Click += new System.EventHandler(this.OnTrayRestore);
             // 
             // Manager
             // 
@@ -557,6 +563,7 @@ namespace SAM.Game
         private System.Windows.Forms.Timer _ScheduleTimer;
         private System.Windows.Forms.Timer _CountdownTimer;
         private System.Windows.Forms.Timer _GlobalPercentTimer;
+        private System.Windows.Forms.Timer _RestartTimer;
         private System.Windows.Forms.Timer _ReconnectTimer;
         // --- Tray ---
         private System.Windows.Forms.NotifyIcon _TrayIcon;
