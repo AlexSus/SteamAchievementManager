@@ -322,7 +322,7 @@ namespace SAM.Game
             // 
             this._DisplayLockedOnlyButton.CheckOnClick = true;
             this._DisplayLockedOnlyButton.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this._DisplayLockedOnlyButton.ForeColor = System.Drawing.Color.Magenta;
+            this._DisplayLockedOnlyButton.ForeColor = System.Drawing.Color.Red;
             this._DisplayLockedOnlyButton.Name = "_DisplayLockedOnlyButton";
             this._DisplayLockedOnlyButton.Size = new System.Drawing.Size(43, 22);
             this._DisplayLockedOnlyButton.Text = "locked";
@@ -332,7 +332,7 @@ namespace SAM.Game
             // 
             this._DisplayUnlockedOnlyButton.CheckOnClick = true;
             this._DisplayUnlockedOnlyButton.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this._DisplayUnlockedOnlyButton.ForeColor = System.Drawing.Color.Magenta;
+            this._DisplayUnlockedOnlyButton.ForeColor = System.Drawing.Color.Green;
             this._DisplayUnlockedOnlyButton.Name = "_DisplayUnlockedOnlyButton";
             this._DisplayUnlockedOnlyButton.Size = new System.Drawing.Size(60, 22);
             this._DisplayUnlockedOnlyButton.Text = "unlocked";
