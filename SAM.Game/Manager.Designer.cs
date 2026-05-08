@@ -2,15 +2,8 @@ namespace SAM.Game
 {
     partial class Manager
     {
-        /// <summary>
-        /// Required designer variable.
-        /// </summary>
         private System.ComponentModel.IContainer components = null;
 
-        /// <summary>
-        /// Clean up any resources being used.
-        /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -22,10 +15,6 @@ namespace SAM.Game
 
         #region Windows Form Designer generated code
 
-        /// <summary>
-        /// Required method for Designer support - do not modify
-        /// the contents of this method with the code editor.
-        /// </summary>
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
@@ -70,7 +59,6 @@ namespace SAM.Game
             this._CountdownTimer = new System.Windows.Forms.Timer(this.components);
             this._GlobalPercentTimer = new System.Windows.Forms.Timer(this.components);
             this._RestartTimer = new System.Windows.Forms.Timer(this.components);
-            this._ReconnectTimer = new System.Windows.Forms.Timer(this.components);
             this._TrayIcon = new System.Windows.Forms.NotifyIcon(this.components);
             this._TrayMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
             this._TrayMenuStatus = new System.Windows.Forms.ToolStripMenuItem();
@@ -334,7 +322,7 @@ namespace SAM.Game
             // 
             this._DisplayLockedOnlyButton.CheckOnClick = true;
             this._DisplayLockedOnlyButton.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this._DisplayLockedOnlyButton.ForeColor = System.Drawing.Color.Red;
+            this._DisplayLockedOnlyButton.ForeColor = System.Drawing.Color.Magenta;
             this._DisplayLockedOnlyButton.Name = "_DisplayLockedOnlyButton";
             this._DisplayLockedOnlyButton.Size = new System.Drawing.Size(43, 22);
             this._DisplayLockedOnlyButton.Text = "locked";
@@ -344,7 +332,7 @@ namespace SAM.Game
             // 
             this._DisplayUnlockedOnlyButton.CheckOnClick = true;
             this._DisplayUnlockedOnlyButton.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this._DisplayUnlockedOnlyButton.ForeColor = System.Drawing.Color.Green;
+            this._DisplayUnlockedOnlyButton.ForeColor = System.Drawing.Color.Magenta;
             this._DisplayUnlockedOnlyButton.Name = "_DisplayUnlockedOnlyButton";
             this._DisplayUnlockedOnlyButton.Size = new System.Drawing.Size(60, 22);
             this._DisplayUnlockedOnlyButton.Text = "unlocked";
@@ -447,11 +435,6 @@ namespace SAM.Game
             this._RestartTimer.Interval = 3000;
             this._RestartTimer.Tick += new System.EventHandler(this.OnRestartTimerTick);
             // 
-            // _ReconnectTimer — fires once after 10s to reinitialize Steam client
-            // 
-            this._ReconnectTimer.Interval = 10000;
-            this._ReconnectTimer.Tick += new System.EventHandler(this.OnReconnectTick);
-            // 
             // _TrayMenuStatus
             // 
             this._TrayMenuStatus.Name = "_TrayMenuStatus";
@@ -520,7 +503,6 @@ namespace SAM.Game
             ((System.ComponentModel.ISupportInitialize)(this._StatisticsDataGridView)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
-
         }
 
         #endregion
@@ -553,7 +535,6 @@ namespace SAM.Game
         private System.Windows.Forms.ToolStripTextBox _MatchingStringTextBox;
         private System.Windows.Forms.ColumnHeader _AchievementUnlockTimeColumnHeader;
         private System.Windows.Forms.CheckBox _EnableStatsEditingCheckBox;
-        // --- Schedule additions ---
         private System.Windows.Forms.ColumnHeader _AchievementOrderColumnHeader;
         private System.Windows.Forms.ColumnHeader _AchievementDelayColumnHeader;
         private System.Windows.Forms.ColumnHeader _AchievementGlobalPercentColumnHeader;
@@ -564,8 +545,6 @@ namespace SAM.Game
         private System.Windows.Forms.Timer _CountdownTimer;
         private System.Windows.Forms.Timer _GlobalPercentTimer;
         private System.Windows.Forms.Timer _RestartTimer;
-        private System.Windows.Forms.Timer _ReconnectTimer;
-        // --- Tray ---
         private System.Windows.Forms.NotifyIcon _TrayIcon;
         private System.Windows.Forms.ContextMenuStrip _TrayMenu;
         private System.Windows.Forms.ToolStripMenuItem _TrayMenuStatus;
