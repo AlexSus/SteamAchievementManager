@@ -56,8 +56,7 @@ namespace SAM.Game
         private List<(Stats.AchievementInfo Info, int DelayMs)> _ScheduleQueue;
         private int _ScheduleIndex;
         private DateTime _NextUnlockTime;
-        private bool _ReconnectMode = false;
-        private int _ReconnectPhase = 0; // 0=idle, 1=disposing (game stopping), 2=initializing (game starting)
+        private int _ReconnectPhase = 0; // 0=idle, 1=reinitializing, 2=resuming
 
         // --- Global percent polling ---
         private int _GlobalPercentRetryCount = 0;
@@ -399,21 +398,6 @@ namespace SAM.Game
             {
                 this._GameStatusLabel.Text = $"Error while retrieving stats: {TranslateError(param.Result)}";
                 this.EnableInput();
-                return;
-            }
-
-            // After reconnect — just resume the schedule, skip full reload
-            if (this._ReconnectMode)
-            {
-                this._ReconnectMode = false;
-                this._CallbackTimer.Enabled = true;
-
-                var next = this._ScheduleQueue[this._ScheduleIndex];
-                int nextDelay = next.DelayMs > 0 ? next.DelayMs : 1000;
-                this._ScheduleTimer.Interval = nextDelay;
-                this._NextUnlockTime = DateTime.Now.AddMilliseconds(nextDelay);
-                this._ScheduleTimer.Start();
-                this._CountdownTimer.Start();
                 return;
             }
 
@@ -940,11 +924,12 @@ namespace SAM.Game
             this._GameStatusLabel.Text =
                 $"Stored {achievements} achievements and {stats} statistics. Restarting game session...";
 
-            // Simulate game restart so Steam registers correct timestamps
+            // Release pipe (game stops), wait 15s, reinitialize (game starts), then refresh
             this._CallbackTimer.Enabled = false;
-            this._ReconnectMode = false; // plain commit, not schedule
-            this._ReconnectPhase = 1;
-            this._ReconnectTimer.Interval = 500;
+            this._SteamClient.Dispose();
+
+            this._ReconnectPhase = 1;  // phase1=reinit, phase2=refresh
+            this._ReconnectTimer.Interval = 15000;
             this._ReconnectTimer.Start();
         }
 
@@ -1294,7 +1279,6 @@ namespace SAM.Game
             this._ScheduleTimer.Stop();
             this._CountdownTimer.Stop();
             this._ReconnectTimer.Stop();
-            this._ReconnectMode = false;
             this._ReconnectPhase = 0;
             this._CallbackTimer.Enabled = true;
             this._ScheduleQueue = null;
@@ -1338,116 +1322,120 @@ namespace SAM.Game
 
             var entry = this._ScheduleQueue[this._ScheduleIndex];
 
-            // Unlock in Steam
-            entry.Info.IsAchieved = true;
-            this._SteamClient.SteamUserStats.SetAchievement(entry.Info.Id, true);
-            this._SteamClient.SteamUserStats.StoreStats();
+            // Release own Steam pipe so Steam sees the game as stopped
+            this._CallbackTimer.Enabled = false;
+            this._CountdownTimer.Stop();
+            this._SteamClient.Dispose();
 
-            // Update row in ListView
-            if (entry.Info.Item != null)
+            this._GameStatusLabel.Text = $"Unlocking \"{entry.Info.Name}\"...";
+
+            // Spawn child process — it connects to Steam, sets achievement, then exits.
+            // Steam sees: game starts → achievement unlocked → game exits.
+            var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+            var child = new System.Diagnostics.Process();
+            child.StartInfo = new System.Diagnostics.ProcessStartInfo(
+                exePath,
+                $"--unlock {this._GameId} {entry.Info.Id}")
             {
-                this._IsUpdatingAchievementList = true;
-                entry.Info.Item.Checked = true;
-                entry.Info.Item.BackColor = Color.Black;
-                this._IsUpdatingAchievementList = false;
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            child.EnableRaisingEvents = true;
+            child.Exited += (s, ev) =>
+            {
+                // Marshal back to UI thread
+                this.BeginInvoke(new Action(() =>
+                {
+                    // Update ListView to reflect unlock
+                    if (entry.Info.Item != null)
+                    {
+                        this._IsUpdatingAchievementList = true;
+                        entry.Info.Item.Checked = true;
+                        entry.Info.Item.BackColor = Color.Black;
+                        this._IsUpdatingAchievementList = false;
+                    }
+                    entry.Info.IsAchieved = true;
+
+                    this._ScheduleIndex++;
+
+                    if (this._ScheduleIndex < this._ScheduleQueue.Count)
+                    {
+                        // Phase 1: wait 15s with game fully stopped
+                        this._GameStatusLabel.Text =
+                            $"Unlocked \"{entry.Info.Name}\". Game stopped. Restarting in 15s...";
+                        this._ReconnectPhase = 1;
+                        this._ReconnectTimer.Interval = 15000;
+                        this._ReconnectTimer.Start();
+                    }
+                    else
+                    {
+                        // All done — reinitialize pipe and finish
+                        this.ReinitializeSteamClient();
+                        this._RunScheduleButton.Enabled = true;
+                        this._RunScheduleButton.Text = "Run Schedule";
+                        this._StopScheduleButton.Enabled = false;
+                        this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
+                        this._TrayIcon.Visible = true;
+                        this._TrayIcon.ShowBalloonTip(5000, "Schedule complete",
+                            "All achievements have been unlocked.", ToolTipIcon.Info);
+                        if (this.Visible && this.WindowState != FormWindowState.Minimized)
+                            this._TrayIcon.Visible = false;
+                    }
+                }));
+            };
+            child.Start();
+        }
+        private void ReinitializeSteamClient()
+        {
+            try
+            {
+                var newClient = new API.Client();
+                newClient.Initialize(this._GameId);
+                this._SteamClient = newClient;
+
+                this._UserStatsReceivedCallback =
+                    this._SteamClient.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
+                this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
+
+                this._CallbackTimer.Enabled = true;
             }
-
-            this._ScheduleIndex++;
-
-            if (this._ScheduleIndex < this._ScheduleQueue.Count)
+            catch (Exception ex)
             {
-                // Phase 1 starts after 2s: disconnect (game stops in Steam)
-                // Phase 2 starts after another 5s: reconnect (game starts in Steam)
-                this._CallbackTimer.Enabled = false;
-                this._CountdownTimer.Stop();
-                var nextName = this._ScheduleQueue[this._ScheduleIndex].Info.Name;
-                this._GameStatusLabel.Text =
-                    $"Unlocked \"{entry.Info.Name}\". Ending game session...";
-                this._ReconnectMode = true;
-                this._ReconnectPhase = 1;
-                this._ReconnectTimer.Interval = 500;
-                this._ReconnectTimer.Start();
-            }
-            else
-            {
-                this._CountdownTimer.Stop();
-                this._RunScheduleButton.Enabled = true;
-                this._RunScheduleButton.Text = "Run Schedule";
-                this._StopScheduleButton.Enabled = false;
-                this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
-                this._TrayIcon.Visible = true;
-                this._TrayIcon.ShowBalloonTip(
-                    5000,
-                    "Schedule complete",
-                    "All achievements have been unlocked.",
-                    ToolTipIcon.Info);
-                // Hide tray icon again if window is visible
-                if (this.Visible && this.WindowState != FormWindowState.Minimized)
-                    this._TrayIcon.Visible = false;
+                this._GameStatusLabel.Text = $"Reconnect failed: {ex.Message}";
             }
         }
+
         private void OnReconnectTick(object sender, EventArgs e)
         {
             this._ReconnectTimer.Stop();
 
             if (this._ReconnectPhase == 1)
             {
-                // Phase 1: release Steam pipe — Steam sees game as stopped
-                this._SteamClient.Dispose();
-                this._GameStatusLabel.Text = "Game session ended. Restarting in 15s...";
+                // Phase 1: reinitialize Steam pipe — Steam sees game as running again
+                this._GameStatusLabel.Text = "Game session started. Continuing in 5s...";
+                this.ReinitializeSteamClient();
 
                 this._ReconnectPhase = 2;
-                this._ReconnectTimer.Interval = 15000;
-                this._ReconnectTimer.Start();
-                return;
-            }
-
-            if (this._ReconnectPhase == 2)
-            {
-                // Phase 2: reinitialize — Steam sees game as running again
-                var newClient = new API.Client();
-                try
-                {
-                    newClient.Initialize(this._GameId);
-                }
-                catch (Exception ex)
-                {
-                    this._ReconnectMode = false;
-                    this._ReconnectPhase = 0;
-                    this._RunScheduleButton.Enabled = true;
-                    this._RunScheduleButton.Text = "Run Schedule";
-                    this._StopScheduleButton.Enabled = false;
-                    this._CallbackTimer.Enabled = true;
-                    this._GameStatusLabel.Text = $"Reconnect failed: {ex.Message}";
-                    return;
-                }
-
-                this._SteamClient = newClient;
-
-                // Re-register callback on the new client
-                this._UserStatsReceivedCallback =
-                    this._SteamClient.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
-                this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
-
-                this._CallbackTimer.Enabled = true;
-                this._GameStatusLabel.Text = "Game session started. Continuing in 5s...";
-
-                this._ReconnectPhase = 3;
                 this._ReconnectTimer.Interval = 5000;
                 this._ReconnectTimer.Start();
                 return;
             }
 
-            // Phase 3: game has been running for 5s — now request stats and resume
+            // Phase 2: start next achievement timer
             this._ReconnectPhase = 0;
 
-            if (this._ReconnectMode)
+            if (this._ScheduleQueue != null && this._ScheduleIndex < this._ScheduleQueue.Count)
             {
-                var steamId = this._SteamClient.SteamUser.GetSteamId();
-                this._SteamClient.SteamUserStats.RequestUserStats(steamId);
+                var next = this._ScheduleQueue[this._ScheduleIndex];
+                int nextDelay = next.DelayMs > 0 ? next.DelayMs : 1000;
+                this._ScheduleTimer.Interval = nextDelay;
+                this._NextUnlockTime = DateTime.Now.AddMilliseconds(nextDelay);
+                this._ScheduleTimer.Start();
+                this._CountdownTimer.Start();
             }
-            else
+            else if (this._ScheduleQueue == null)
             {
+                // Called from OnStore — just refresh
                 this.RefreshStats();
             }
         }
