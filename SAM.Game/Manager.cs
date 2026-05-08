@@ -61,7 +61,16 @@ namespace SAM.Game
         private DateTime _NextUnlockTime;
 
         // Queue loaded from file, started after stats are received
-        private List<(string Id, int DelayMs)> _PendingResumeQueue;
+        private ScheduleStateData _PendingResumeState;
+
+        private class ScheduleStateData
+        {
+            public string Filter;   // "both", "locked", "unlocked"
+            public int SortColumn;
+            public SortOrder SortDirection;
+            public List<(string Id, int Order, int DelayMinutes)> Checked;
+            public List<(string Id, int DelayMs)> Queue;
+        }
 
         // --- Global percent polling ---
         private int _GlobalPercentRetryCount = 0;
@@ -143,7 +152,7 @@ namespace SAM.Game
             // If resuming — load state, start hidden in tray
             if (this._IsResume)
             {
-                this._PendingResumeQueue = this.LoadScheduleState();
+                this._PendingResumeState = this.LoadScheduleState();
                 this.WindowState = FormWindowState.Minimized;
                 this.Load += (s, e) => { this.Hide(); this._TrayIcon.Visible = true; };
             }
@@ -458,11 +467,11 @@ namespace SAM.Game
             this._GameStatusLabel.Text = $"Retrieved {this._AchievementListView.Items.Count} achievements and {this._StatisticsDataGridView.Rows.Count} statistics.";
             this.EnableInput();
 
-            // If we have a pending resume queue — start it now that achievements are loaded
-            if (this._PendingResumeQueue != null && this._PendingResumeQueue.Count > 0)
+            // If we have a pending resume state — restore it now that achievements are loaded
+            if (this._PendingResumeState != null)
             {
-                this.StartResumedSchedule(this._PendingResumeQueue);
-                this._PendingResumeQueue = null;
+                this.ApplyResumedState(this._PendingResumeState);
+                this._PendingResumeState = null;
             }
 
             // Request global percentages only if some entries are still missing from cache
@@ -1410,9 +1419,32 @@ namespace SAM.Game
 
         private void SaveScheduleState(List<(Stats.AchievementInfo Info, int DelayMs)> remaining)
         {
-            var lines = new List<string> { this._GameId.ToString() };
+            var lines = new List<string>();
+
+            // Game ID
+            lines.Add($"GAMEID:{this._GameId}");
+
+            // Filter state
+            string filter = this._DisplayLockedOnlyButton.Checked ? "locked"
+                : this._DisplayUnlockedOnlyButton.Checked ? "unlocked"
+                : "both";
+            lines.Add($"FILTER:{filter}");
+
+            // Sort state
+            string sortDir = this._SortOrder == SortOrder.Descending ? "desc" : "asc";
+            lines.Add($"SORT:{this._SortColumn}:{sortDir}");
+
+            // All checked achievements with order and delay
+            foreach (ListViewItem item in this._AchievementListView.Items)
+            {
+                if (item.Tag is Stats.AchievementInfo info && info.ScheduleOrder.HasValue)
+                    lines.Add($"CHECK:{info.Id}|{info.ScheduleOrder.Value}|{info.DelayMinutes}");
+            }
+
+            // Remaining queue (IDs + computed DelayMs including random seconds)
             foreach (var (info, delayMs) in remaining)
-                lines.Add($"{info.Id}|{delayMs}");
+                lines.Add($"QUEUE:{info.Id}|{delayMs}");
+
             File.WriteAllLines(this.GetStateFilePath(), lines);
         }
 
@@ -1423,7 +1455,7 @@ namespace SAM.Game
                 File.Delete(path);
         }
 
-        private List<(string Id, int DelayMs)> LoadScheduleState()
+        private ScheduleStateData LoadScheduleState()
         {
             var path = this.GetStateFilePath();
             if (!File.Exists(path))
@@ -1432,21 +1464,54 @@ namespace SAM.Game
             try
             {
                 var lines = File.ReadAllLines(path);
-                if (lines.Length < 2)
-                    return null;
-
-                // First line is gameId — verify it matches
-                if (!long.TryParse(lines[0], out long savedGameId) || savedGameId != this._GameId)
-                    return null;
-
-                var result = new List<(string, int)>();
-                for (int i = 1; i < lines.Length; i++)
+                var state = new ScheduleStateData
                 {
-                    var parts = lines[i].Split('|');
-                    if (parts.Length == 2 && int.TryParse(parts[1], out int delayMs))
-                        result.Add((parts[0], delayMs));
+                    Filter = "both",
+                    SortColumn = -1,
+                    SortDirection = SortOrder.None,
+                    Checked = new List<(string, int, int)>(),
+                    Queue = new List<(string, int)>(),
+                };
+
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("GAMEID:"))
+                    {
+                        if (!long.TryParse(line.Substring(7), out long savedId) || savedId != this._GameId)
+                            return null;
+                    }
+                    else if (line.StartsWith("FILTER:"))
+                    {
+                        state.Filter = line.Substring(7);
+                    }
+                    else if (line.StartsWith("SORT:"))
+                    {
+                        var parts = line.Substring(5).Split(':');
+                        if (parts.Length == 2 && int.TryParse(parts[0], out int col))
+                        {
+                            state.SortColumn = col;
+                            state.SortDirection = parts[1] == "desc"
+                                ? SortOrder.Descending
+                                : SortOrder.Ascending;
+                        }
+                    }
+                    else if (line.StartsWith("CHECK:"))
+                    {
+                        var parts = line.Substring(6).Split('|');
+                        if (parts.Length == 3
+                            && int.TryParse(parts[1], out int order)
+                            && int.TryParse(parts[2], out int delay))
+                            state.Checked.Add((parts[0], order, delay));
+                    }
+                    else if (line.StartsWith("QUEUE:"))
+                    {
+                        var parts = line.Substring(6).Split('|');
+                        if (parts.Length == 2 && int.TryParse(parts[1], out int delayMs))
+                            state.Queue.Add((parts[0], delayMs));
+                    }
                 }
-                return result.Count > 0 ? result : null;
+
+                return (state.Queue.Count > 0 || state.Checked.Count > 0) ? state : null;
             }
             catch
             {
@@ -1454,14 +1519,83 @@ namespace SAM.Game
             }
         }
 
-        private void StartResumedSchedule(List<(string Id, int DelayMs)> pending)
+        private void ApplyResumedState(ScheduleStateData state)
         {
-            // Match IDs to loaded AchievementInfo objects
+            // 1. Restore filter buttons and reload list accordingly
+            this._IsUpdatingAchievementList = true;
+            if (state.Filter == "locked")
+            {
+                this._DisplayLockedOnlyButton.Checked = true;
+                this._DisplayUnlockedOnlyButton.Checked = false;
+            }
+            else if (state.Filter == "unlocked")
+            {
+                this._DisplayLockedOnlyButton.Checked = false;
+                this._DisplayUnlockedOnlyButton.Checked = true;
+            }
+            else
+            {
+                this._DisplayLockedOnlyButton.Checked = false;
+                this._DisplayUnlockedOnlyButton.Checked = false;
+            }
+            this._IsUpdatingAchievementList = false;
+            this.GetAchievements(); // reload with correct filter
+
+            // 2. Build lookup map
             var infoMap = new Dictionary<string, Stats.AchievementInfo>();
             foreach (ListViewItem item in this._AchievementListView.Items)
             {
                 if (item.Tag is Stats.AchievementInfo info)
                     infoMap[info.Id] = info;
+            }
+
+            // 3. Restore checked state, order and delay for each achievement
+            this._ScheduleOrderCounter = 0;
+            foreach (var (id, order, delayMinutes) in state.Checked.OrderBy(c => c.Order))
+            {
+                if (!infoMap.TryGetValue(id, out var info))
+                    continue;
+
+                info.ScheduleOrder = order;
+                info.DelayMinutes = delayMinutes;
+                if (order > this._ScheduleOrderCounter)
+                    this._ScheduleOrderCounter = order;
+
+                this._IsUpdatingAchievementList = true;
+                info.Item.Checked = true;
+                info.Item.SubItems[1].Text = order.ToString();
+                info.Item.SubItems[3].Text = delayMinutes > 0 ? delayMinutes.ToString() : "";
+                info.Item.BackColor = Color.FromArgb(0, 72, 0);
+                this._IsUpdatingAchievementList = false;
+            }
+
+            // 4. Restore sort
+            if (state.SortColumn >= 0)
+            {
+                this._SortColumn = state.SortColumn;
+                this._SortOrder = state.SortDirection;
+                this._AchievementListView.ListViewItemSorter =
+                    new AchievementListComparer(this._SortColumn, this._SortOrder);
+                this._AchievementListView.Sort();
+            }
+
+            // 5. Start the queue
+            if (state.Queue.Count > 0)
+                this.StartResumedSchedule(state.Queue, infoMap);
+        }
+
+        private void StartResumedSchedule(
+            List<(string Id, int DelayMs)> pending,
+            Dictionary<string, Stats.AchievementInfo> infoMap = null)
+        {
+            if (infoMap == null)
+            {
+                infoMap = new Dictionary<string, Stats.AchievementInfo>();
+                foreach (ListViewItem item in this._AchievementListView.Items)
+                {
+                    if (item.Tag is Stats.AchievementInfo info)
+                        infoMap[info.Id] = info;
+                }
             }
 
             var entries = new List<(Stats.AchievementInfo Info, int DelayMs)>();
