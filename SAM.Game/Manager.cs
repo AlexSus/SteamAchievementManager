@@ -57,6 +57,7 @@ namespace SAM.Game
         private int _ScheduleIndex;
         private DateTime _NextUnlockTime;
         private bool _ReconnectMode = false;
+        private int _ReconnectPhase = 0; // 0=idle, 1=disposing (game stopping), 2=initializing (game starting)
 
         // --- Global percent polling ---
         private int _GlobalPercentRetryCount = 0;
@@ -936,13 +937,15 @@ namespace SAM.Game
                 return;
             }
 
-            MessageBox.Show(
-                this,
-                $"Stored {achievements} achievements and {stats} statistics.",
-                "Information",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            this.RefreshStats();
+            this._GameStatusLabel.Text =
+                $"Stored {achievements} achievements and {stats} statistics. Restarting game session...";
+
+            // Simulate game restart so Steam registers correct timestamps
+            this._CallbackTimer.Enabled = false;
+            this._ReconnectMode = false; // plain commit, not schedule
+            this._ReconnectPhase = 1;
+            this._ReconnectTimer.Interval = 500;
+            this._ReconnectTimer.Start();
         }
 
         private void OnStatDataError(object sender, DataGridViewDataErrorEventArgs e)
@@ -1292,6 +1295,7 @@ namespace SAM.Game
             this._CountdownTimer.Stop();
             this._ReconnectTimer.Stop();
             this._ReconnectMode = false;
+            this._ReconnectPhase = 0;
             this._CallbackTimer.Enabled = true;
             this._ScheduleQueue = null;
             this._RunScheduleButton.Enabled = true;
@@ -1352,13 +1356,16 @@ namespace SAM.Game
 
             if (this._ScheduleIndex < this._ScheduleQueue.Count)
             {
-                // Disconnect from Steam, wait 10s, reconnect — gives Steam time to
-                // flush and timestamp achievements separately
+                // Phase 1 starts after 2s: disconnect (game stops in Steam)
+                // Phase 2 starts after another 5s: reconnect (game starts in Steam)
                 this._CallbackTimer.Enabled = false;
                 this._CountdownTimer.Stop();
                 var nextName = this._ScheduleQueue[this._ScheduleIndex].Info.Name;
                 this._GameStatusLabel.Text =
-                    $"Unlocked \"{entry.Info.Name}\". Reconnecting... next: \"{nextName}\".";
+                    $"Unlocked \"{entry.Info.Name}\". Ending game session...";
+                this._ReconnectMode = true;
+                this._ReconnectPhase = 1;
+                this._ReconnectTimer.Interval = 500;
                 this._ReconnectTimer.Start();
             }
             else
@@ -1368,50 +1375,81 @@ namespace SAM.Game
                 this._RunScheduleButton.Text = "Run Schedule";
                 this._StopScheduleButton.Enabled = false;
                 this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
-                MessageBox.Show(this, "All scheduled achievements unlocked!", "Done",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                this._TrayIcon.Visible = true;
+                this._TrayIcon.ShowBalloonTip(
+                    5000,
+                    "Schedule complete",
+                    "All achievements have been unlocked.",
+                    ToolTipIcon.Info);
+                // Hide tray icon again if window is visible
+                if (this.Visible && this.WindowState != FormWindowState.Minimized)
+                    this._TrayIcon.Visible = false;
             }
         }
         private void OnReconnectTick(object sender, EventArgs e)
         {
             this._ReconnectTimer.Stop();
 
-            // Dispose the current Steam session (simulates game exit)
-            this._SteamClient.Dispose();
+            if (this._ReconnectPhase == 1)
+            {
+                // Phase 1: release Steam pipe — Steam sees game as stopped
+                this._SteamClient.Dispose();
+                this._GameStatusLabel.Text = "Game session ended. Restarting in 15s...";
 
-            // Reinitialize (simulates game launch)
-            var newClient = new API.Client();
-            try
-            {
-                newClient.Initialize(this._GameId);
-            }
-            catch (Exception ex)
-            {
-                this._ReconnectMode = false;
-                this._RunScheduleButton.Enabled = true;
-                this._RunScheduleButton.Text = "Run Schedule";
-                this._StopScheduleButton.Enabled = false;
-                this._CallbackTimer.Enabled = true;
-                this._GameStatusLabel.Text = $"Reconnect failed: {ex.Message}";
+                this._ReconnectPhase = 2;
+                this._ReconnectTimer.Interval = 15000;
+                this._ReconnectTimer.Start();
                 return;
             }
 
-            this._SteamClient = newClient;
-            this._ReconnectMode = true;
+            if (this._ReconnectPhase == 2)
+            {
+                // Phase 2: reinitialize — Steam sees game as running again
+                var newClient = new API.Client();
+                try
+                {
+                    newClient.Initialize(this._GameId);
+                }
+                catch (Exception ex)
+                {
+                    this._ReconnectMode = false;
+                    this._ReconnectPhase = 0;
+                    this._RunScheduleButton.Enabled = true;
+                    this._RunScheduleButton.Text = "Run Schedule";
+                    this._StopScheduleButton.Enabled = false;
+                    this._CallbackTimer.Enabled = true;
+                    this._GameStatusLabel.Text = $"Reconnect failed: {ex.Message}";
+                    return;
+                }
 
-            // Re-register callback on the new client
-            this._UserStatsReceivedCallback =
-                this._SteamClient.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
-            this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
+                this._SteamClient = newClient;
 
-            // Request stats — OnUserStatsReceived will resume the queue
-            var steamId = this._SteamClient.SteamUser.GetSteamId();
-            this._SteamClient.SteamUserStats.RequestUserStats(steamId);
+                // Re-register callback on the new client
+                this._UserStatsReceivedCallback =
+                    this._SteamClient.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
+                this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
 
-            // Re-enable callback pump for new client
-            this._CallbackTimer.Enabled = true;
+                this._CallbackTimer.Enabled = true;
+                this._GameStatusLabel.Text = "Game session started. Continuing in 5s...";
 
-            this._GameStatusLabel.Text = "Reconnected. Waiting for Steam...";
+                this._ReconnectPhase = 3;
+                this._ReconnectTimer.Interval = 5000;
+                this._ReconnectTimer.Start();
+                return;
+            }
+
+            // Phase 3: game has been running for 5s — now request stats and resume
+            this._ReconnectPhase = 0;
+
+            if (this._ReconnectMode)
+            {
+                var steamId = this._SteamClient.SteamUser.GetSteamId();
+                this._SteamClient.SteamUserStats.RequestUserStats(steamId);
+            }
+            else
+            {
+                this.RefreshStats();
+            }
         }
     }
 }
