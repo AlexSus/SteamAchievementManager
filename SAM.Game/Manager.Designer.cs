@@ -443,7 +443,7 @@ namespace SAM.Game
             // 
             // _ReconnectTimer — fires once after 10s to reinitialize Steam client
             // 
-            this._ReconnectTimer.Interval = 15000;
+            this._ReconnectTimer.Interval = 10000;
             this._ReconnectTimer.Tick += new System.EventHandler(this.OnReconnectTick);
             // 
             // _TrayMenuStatus
