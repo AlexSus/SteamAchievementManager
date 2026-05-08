@@ -69,6 +69,7 @@ namespace SAM.Game
             this._ScheduleTimer = new System.Windows.Forms.Timer(this.components);
             this._CountdownTimer = new System.Windows.Forms.Timer(this.components);
             this._GlobalPercentTimer = new System.Windows.Forms.Timer(this.components);
+            this._ReconnectTimer = new System.Windows.Forms.Timer(this.components);
             this._TrayIcon = new System.Windows.Forms.NotifyIcon(this.components);
             this._TrayMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
             this._TrayMenuStatus = new System.Windows.Forms.ToolStripMenuItem();
@@ -332,7 +333,7 @@ namespace SAM.Game
             // 
             this._DisplayLockedOnlyButton.CheckOnClick = true;
             this._DisplayLockedOnlyButton.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this._DisplayLockedOnlyButton.ForeColor = System.Drawing.Color.Magenta;
+            this._DisplayLockedOnlyButton.ForeColor = System.Drawing.Color.Red;
             this._DisplayLockedOnlyButton.Name = "_DisplayLockedOnlyButton";
             this._DisplayLockedOnlyButton.Size = new System.Drawing.Size(43, 22);
             this._DisplayLockedOnlyButton.Text = "locked";
@@ -342,7 +343,7 @@ namespace SAM.Game
             // 
             this._DisplayUnlockedOnlyButton.CheckOnClick = true;
             this._DisplayUnlockedOnlyButton.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this._DisplayUnlockedOnlyButton.ForeColor = System.Drawing.Color.Magenta;
+            this._DisplayUnlockedOnlyButton.ForeColor = System.Drawing.Color.Green;
             this._DisplayUnlockedOnlyButton.Name = "_DisplayUnlockedOnlyButton";
             this._DisplayUnlockedOnlyButton.Size = new System.Drawing.Size(60, 22);
             this._DisplayUnlockedOnlyButton.Text = "unlocked";
@@ -439,6 +440,11 @@ namespace SAM.Game
             // 
             this._GlobalPercentTimer.Interval = 5000;
             this._GlobalPercentTimer.Tick += new System.EventHandler(this.OnGlobalPercentTick);
+            // 
+            // _ReconnectTimer — fires once after 10s to reinitialize Steam client
+            // 
+            this._ReconnectTimer.Interval = 15000;
+            this._ReconnectTimer.Tick += new System.EventHandler(this.OnReconnectTick);
             // 
             // _TrayMenuStatus
             // 
@@ -551,6 +557,7 @@ namespace SAM.Game
         private System.Windows.Forms.Timer _ScheduleTimer;
         private System.Windows.Forms.Timer _CountdownTimer;
         private System.Windows.Forms.Timer _GlobalPercentTimer;
+        private System.Windows.Forms.Timer _ReconnectTimer;
         // --- Tray ---
         private System.Windows.Forms.NotifyIcon _TrayIcon;
         private System.Windows.Forms.ContextMenuStrip _TrayMenu;
