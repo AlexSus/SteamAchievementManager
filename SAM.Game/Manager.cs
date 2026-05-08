@@ -37,7 +37,10 @@ namespace SAM.Game
     internal partial class Manager : Form
     {
         private readonly long _GameId;
+        private readonly bool _IsResume;
         private API.Client _SteamClient;
+
+        private const string StateFileName = "schedule_state.sam";
 
         private readonly WebClient _IconDownloader = new();
 
@@ -56,7 +59,9 @@ namespace SAM.Game
         private List<(Stats.AchievementInfo Info, int DelayMs)> _ScheduleQueue;
         private int _ScheduleIndex;
         private DateTime _NextUnlockTime;
-        private int _ReconnectPhase = 0; // 0=idle, 1=reinitializing, 2=resuming
+
+        // Queue loaded from file, started after stats are received
+        private List<(string Id, int DelayMs)> _PendingResumeQueue;
 
         // --- Global percent polling ---
         private int _GlobalPercentRetryCount = 0;
@@ -71,9 +76,11 @@ namespace SAM.Game
         private ListViewItem _EditingItem;
         private int _EditingSubItemIndex;
 
-        public Manager(long gameId, API.Client client)
+        public Manager(long gameId, API.Client client, bool isResume = false)
         {
             this.InitializeComponent();
+
+            this._IsResume = isResume;
 
             this._MainTabControl.SelectedTab = this._AchievementsTabPage;
 
@@ -132,6 +139,14 @@ namespace SAM.Game
             // Tray icon — reuse the form's own icon
             this._TrayIcon.Icon = this.Icon;
             this.Resize += this.OnFormResize;
+
+            // If resuming — load state, start hidden in tray
+            if (this._IsResume)
+            {
+                this._PendingResumeQueue = this.LoadScheduleState();
+                this.WindowState = FormWindowState.Minimized;
+                this.Load += (s, e) => { this.Hide(); this._TrayIcon.Visible = true; };
+            }
 
             this.RefreshStats();
         }
@@ -442,6 +457,13 @@ namespace SAM.Game
 
             this._GameStatusLabel.Text = $"Retrieved {this._AchievementListView.Items.Count} achievements and {this._StatisticsDataGridView.Rows.Count} statistics.";
             this.EnableInput();
+
+            // If we have a pending resume queue — start it now that achievements are loaded
+            if (this._PendingResumeQueue != null && this._PendingResumeQueue.Count > 0)
+            {
+                this.StartResumedSchedule(this._PendingResumeQueue);
+                this._PendingResumeQueue = null;
+            }
 
             // Request global percentages only if some entries are still missing from cache
             bool hasPending = this._AchievementListView.Items
@@ -921,16 +943,13 @@ namespace SAM.Game
                 return;
             }
 
-            this._GameStatusLabel.Text =
-                $"Stored {achievements} achievements and {stats} statistics. Restarting game session...";
-
-            // Release pipe (game stops), wait 15s, reinitialize (game starts), then refresh
-            this._CallbackTimer.Enabled = false;
-            this._SteamClient.Dispose();
-
-            this._ReconnectPhase = 1;  // phase1=reinit, phase2=refresh
-            this._ReconnectTimer.Interval = 15000;
-            this._ReconnectTimer.Start();
+            MessageBox.Show(
+                this,
+                $"Stored {achievements} achievements and {stats} statistics.",
+                "Information",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            this.RefreshStats();
         }
 
         private void OnStatDataError(object sender, DataGridViewDataErrorEventArgs e)
@@ -1278,9 +1297,8 @@ namespace SAM.Game
         {
             this._ScheduleTimer.Stop();
             this._CountdownTimer.Stop();
-            this._ReconnectTimer.Stop();
-            this._ReconnectPhase = 0;
-            this._CallbackTimer.Enabled = true;
+            this._RestartTimer.Stop();
+            this.DeleteScheduleState();
             this._ScheduleQueue = null;
             this._RunScheduleButton.Enabled = true;
             this._RunScheduleButton.Text = "Run Schedule";
@@ -1322,122 +1340,154 @@ namespace SAM.Game
 
             var entry = this._ScheduleQueue[this._ScheduleIndex];
 
-            // Release own Steam pipe so Steam sees the game as stopped
-            this._CallbackTimer.Enabled = false;
-            this._CountdownTimer.Stop();
-            this._SteamClient.Dispose();
+            // Unlock in Steam
+            entry.Info.IsAchieved = true;
+            this._SteamClient.SteamUserStats.SetAchievement(entry.Info.Id, true);
+            this._SteamClient.SteamUserStats.StoreStats();
 
-            this._GameStatusLabel.Text = $"Unlocking \"{entry.Info.Name}\"...";
-
-            // Spawn child process — it connects to Steam, sets achievement, then exits.
-            // Steam sees: game starts → achievement unlocked → game exits.
-            var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
-            var child = new System.Diagnostics.Process();
-            child.StartInfo = new System.Diagnostics.ProcessStartInfo(
-                exePath,
-                $"--unlock {this._GameId} {entry.Info.Id}")
+            // Update row in ListView
+            if (entry.Info.Item != null)
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            child.EnableRaisingEvents = true;
-            child.Exited += (s, ev) =>
+                this._IsUpdatingAchievementList = true;
+                entry.Info.Item.Checked = true;
+                entry.Info.Item.BackColor = Color.Black;
+                this._IsUpdatingAchievementList = false;
+            }
+
+            this._ScheduleIndex++;
+
+            if (this._ScheduleIndex < this._ScheduleQueue.Count)
             {
-                // Marshal back to UI thread
-                this.BeginInvoke(new Action(() =>
-                {
-                    // Update ListView to reflect unlock
-                    if (entry.Info.Item != null)
-                    {
-                        this._IsUpdatingAchievementList = true;
-                        entry.Info.Item.Checked = true;
-                        entry.Info.Item.BackColor = Color.Black;
-                        this._IsUpdatingAchievementList = false;
-                    }
-                    entry.Info.IsAchieved = true;
-
-                    this._ScheduleIndex++;
-
-                    if (this._ScheduleIndex < this._ScheduleQueue.Count)
-                    {
-                        // Phase 1: wait 15s with game fully stopped
-                        this._GameStatusLabel.Text =
-                            $"Unlocked \"{entry.Info.Name}\". Game stopped. Restarting in 15s...";
-                        this._ReconnectPhase = 1;
-                        this._ReconnectTimer.Interval = 15000;
-                        this._ReconnectTimer.Start();
-                    }
-                    else
-                    {
-                        // All done — reinitialize pipe and finish
-                        this.ReinitializeSteamClient();
-                        this._RunScheduleButton.Enabled = true;
-                        this._RunScheduleButton.Text = "Run Schedule";
-                        this._StopScheduleButton.Enabled = false;
-                        this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
-                        this._TrayIcon.Visible = true;
-                        this._TrayIcon.ShowBalloonTip(5000, "Schedule complete",
-                            "All achievements have been unlocked.", ToolTipIcon.Info);
-                        if (this.Visible && this.WindowState != FormWindowState.Minimized)
-                            this._TrayIcon.Visible = false;
-                    }
-                }));
-            };
-            child.Start();
+                // Save remaining queue and restart app after 3s so Steam syncs cleanly
+                this.SaveScheduleState(this._ScheduleQueue.Skip(this._ScheduleIndex).ToList());
+                this._CountdownTimer.Stop();
+                this._GameStatusLabel.Text =
+                    $"Unlocked \"{entry.Info.Name}\". Restarting in 3s for clean sync...";
+                this._RestartTimer.Start();
+            }
+            else
+            {
+                // All done
+                this.DeleteScheduleState();
+                this._CountdownTimer.Stop();
+                this._RunScheduleButton.Enabled = true;
+                this._RunScheduleButton.Text = "Run Schedule";
+                this._StopScheduleButton.Enabled = false;
+                this._GameStatusLabel.Text = "Schedule complete! All achievements unlocked.";
+                this._TrayIcon.Visible = true;
+                this._TrayIcon.ShowBalloonTip(5000, "Schedule complete",
+                    "All achievements have been unlocked.", ToolTipIcon.Info);
+                if (this.Visible && this.WindowState != FormWindowState.Minimized)
+                    this._TrayIcon.Visible = false;
+            }
         }
-        private void ReinitializeSteamClient()
+
+        private void OnRestartTimerTick(object sender, EventArgs e)
         {
+            this._RestartTimer.Stop();
+
+            // Write a batch file that waits 15s then relaunches with --resume
+            string exePath = Application.ExecutablePath;
+            string batchPath = Path.Combine(Path.GetTempPath(), "sam_resume.bat");
+            File.WriteAllText(batchPath,
+                "@echo off\r\n" +
+                "timeout /t 15 /nobreak > nul\r\n" +
+                $"start \"\" \"{exePath}\" {this._GameId} --resume\r\n" +
+                "del \"%~f0\"\r\n");
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = batchPath,
+                CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            });
+
+            Application.Exit();
+        }
+
+        private string GetStateFilePath() =>
+            Path.Combine(Application.StartupPath, StateFileName);
+
+        private void SaveScheduleState(List<(Stats.AchievementInfo Info, int DelayMs)> remaining)
+        {
+            var lines = new List<string> { this._GameId.ToString() };
+            foreach (var (info, delayMs) in remaining)
+                lines.Add($"{info.Id}|{delayMs}");
+            File.WriteAllLines(this.GetStateFilePath(), lines);
+        }
+
+        private void DeleteScheduleState()
+        {
+            var path = this.GetStateFilePath();
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+
+        private List<(string Id, int DelayMs)> LoadScheduleState()
+        {
+            var path = this.GetStateFilePath();
+            if (!File.Exists(path))
+                return null;
+
             try
             {
-                var newClient = new API.Client();
-                newClient.Initialize(this._GameId);
-                this._SteamClient = newClient;
+                var lines = File.ReadAllLines(path);
+                if (lines.Length < 2)
+                    return null;
 
-                this._UserStatsReceivedCallback =
-                    this._SteamClient.CreateAndRegisterCallback<API.Callbacks.UserStatsReceived>();
-                this._UserStatsReceivedCallback.OnRun += this.OnUserStatsReceived;
+                // First line is gameId — verify it matches
+                if (!long.TryParse(lines[0], out long savedGameId) || savedGameId != this._GameId)
+                    return null;
 
-                this._CallbackTimer.Enabled = true;
+                var result = new List<(string, int)>();
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split('|');
+                    if (parts.Length == 2 && int.TryParse(parts[1], out int delayMs))
+                        result.Add((parts[0], delayMs));
+                }
+                return result.Count > 0 ? result : null;
             }
-            catch (Exception ex)
+            catch
             {
-                this._GameStatusLabel.Text = $"Reconnect failed: {ex.Message}";
+                return null;
             }
         }
 
-        private void OnReconnectTick(object sender, EventArgs e)
+        private void StartResumedSchedule(List<(string Id, int DelayMs)> pending)
         {
-            this._ReconnectTimer.Stop();
-
-            if (this._ReconnectPhase == 1)
+            // Match IDs to loaded AchievementInfo objects
+            var infoMap = new Dictionary<string, Stats.AchievementInfo>();
+            foreach (ListViewItem item in this._AchievementListView.Items)
             {
-                // Phase 1: reinitialize Steam pipe — Steam sees game as running again
-                this._GameStatusLabel.Text = "Game session started. Continuing in 5s...";
-                this.ReinitializeSteamClient();
+                if (item.Tag is Stats.AchievementInfo info)
+                    infoMap[info.Id] = info;
+            }
 
-                this._ReconnectPhase = 2;
-                this._ReconnectTimer.Interval = 5000;
-                this._ReconnectTimer.Start();
+            var entries = new List<(Stats.AchievementInfo Info, int DelayMs)>();
+            foreach (var (id, delayMs) in pending)
+            {
+                if (infoMap.TryGetValue(id, out var info))
+                    entries.Add((info, delayMs));
+            }
+
+            if (entries.Count == 0)
+            {
+                this.DeleteScheduleState();
                 return;
             }
 
-            // Phase 2: start next achievement timer
-            this._ReconnectPhase = 0;
+            this._ScheduleQueue = entries;
+            this._ScheduleIndex = 0;
+            this._RunScheduleButton.Enabled = false;
+            this._StopScheduleButton.Enabled = true;
+            this._RunScheduleButton.Text = "Running...";
 
-            if (this._ScheduleQueue != null && this._ScheduleIndex < this._ScheduleQueue.Count)
-            {
-                var next = this._ScheduleQueue[this._ScheduleIndex];
-                int nextDelay = next.DelayMs > 0 ? next.DelayMs : 1000;
-                this._ScheduleTimer.Interval = nextDelay;
-                this._NextUnlockTime = DateTime.Now.AddMilliseconds(nextDelay);
-                this._ScheduleTimer.Start();
-                this._CountdownTimer.Start();
-            }
-            else if (this._ScheduleQueue == null)
-            {
-                // Called from OnStore — just refresh
-                this.RefreshStats();
-            }
+            int firstDelay = entries[0].DelayMs > 0 ? entries[0].DelayMs : 1000;
+            this._ScheduleTimer.Interval = firstDelay;
+            this._NextUnlockTime = DateTime.Now.AddMilliseconds(firstDelay);
+            this._ScheduleTimer.Start();
+            this._CountdownTimer.Start();
         }
     }
 }
